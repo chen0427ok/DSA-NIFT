@@ -105,7 +105,7 @@ python prepare_data.py      # 產生 data/train.csv, dev.csv, val_unlabeled.csv
 | | 實驗 1：Baseline | 實驗 2：DAPT | 實驗 3：反思語料版 |
 |---|---|---|---|
 | Encoder | macbert-base | macbert-base | macbert-base |
-| DAPT | 無 | 新住民 200 篇 MLM (30 ep) | _(待定)_ |
+| DAPT | 無 | 新住民 200 篇 MLM (30 ep) | 無 |
 | **Train set** | EmoBank CVAS+CVAT (4,998) | EmoBank CVAS+CVAT (4,998) | EmoBank + DSA-MST + ROCLING-2021 (9,435) |
 | **Valid set (dev)** | EmoBank 切出 (~555) | EmoBank 切出 (~555) | DSA-MST 反思切出 (253) |
 | **Submission set** | DSANIDF validation 200 | DSANIDF validation 200 | DSANIDF validation 200 |
@@ -131,12 +131,17 @@ python prepare_data.py      # 產生 data/train.csv, dev.csv, val_unlabeled.csv
 > 仍是 EmoBank 域的 arousal 分布，補不到「label 層級」的領域落差；加上語料僅 200 篇太小。
 > → 真正的解法是換訓練語域的**監督訊號**（實驗 3）。
 
-**實驗 3（反思語料版）** — _(待跑)_
+**實驗 3（反思語料版）** — 官方 validation 實際分數：
 
 | | MAE ↓ | PCC ↑ |
 |---|---|---|
-| Valence | _待填_ | _待填_ |
-| Arousal | _待填_ | _待填_ |
+| Valence | 0.627 | 0.870 |
+| Arousal | 0.944 | 0.388 |
+
+> 對比實驗 1：**4 指標贏 3 項**（V_MAE 0.654→0.627、V_PCC 0.867→0.870、A_MAE 0.985→0.944），
+> 只有 A_PCC 微降（0.412→0.388）。加反思語料修好了**校準**（arousal 預測 std 0.68→0.81、MAE 全面下降），
+> 但沒修好**排序**（A_PCC）。dev arousal PCC 在 epoch 1 就到頂後下滑 → 已輕微 overfit，**加 epoch 無益**。
+> 下一步應針對 arousal PCC（排序）專項處理，而非加訓練量。
 
 > 注意：實驗 2 這次跑的 train set 仍是**原始 EmoBank**（157 steps ≈ 5,000 筆），
 > 尚未吃到新加的反思語料；實驗 3 才是真正換語域的版本。
