@@ -119,8 +119,17 @@ python prepare_data.py      # 產生 data/train.csv, dev.csv, val_unlabeled.csv
 | Valence | 0.654 | **0.867** |
 | Arousal | 0.985 | **0.412** |
 
-**實驗 2（DAPT）** — dev 分數（best epoch 4）：Valence PCC 0.859 / Arousal PCC 0.620。
-官方 validation 實際分數：_(待提交)_。
+**實驗 2（DAPT）** — 官方 validation 實際分數：
+
+| | MAE ↓ | PCC ↑ |
+|---|---|---|
+| Valence | 0.649 | 0.866 |
+| Arousal | 1.009 | 0.395 |
+
+> 與實驗 1 為乾淨 ablation（同 train/dev，只差有無 DAPT）：**DAPT 沒幫助，arousal 反而略退**
+> （PCC 0.412→0.395、MAE 0.985→1.009）。推論：DAPT 只改 encoder 無監督表徵，但回歸頭學的
+> 仍是 EmoBank 域的 arousal 分布，補不到「label 層級」的領域落差；加上語料僅 200 篇太小。
+> → 真正的解法是換訓練語域的**監督訊號**（實驗 3）。
 
 **實驗 3（反思語料版）** — _(待跑)_
 
@@ -145,8 +154,10 @@ python prepare_data.py      # 產生 data/train.csv, dev.csv, val_unlabeled.csv
 3. **Arousal 預測被壓縮。** submission 的 arousal 預測 std 只有 ~0.68（valence ~1.28），
    模型傾向往平均值靠 → 直接拉低 PCC。
 
-4. **DAPT 單獨效果有限。** 目標域語料只有 200 篇太小，dev 上 arousal 沒有明顯起色。
-   等官方釋出 test 1100 篇後加入 DAPT 語料，效果應會更明顯。
+4. **DAPT（舊資料）實測沒幫助、arousal 反而略退**（PCC 0.412→0.395）。原因是 DAPT 只改
+   encoder 無監督表徵，回歸頭仍學 EmoBank 域的 arousal 分布，補不到 label 層級的落差；
+   且語料僅 200 篇太小。→ 缺的是「對的語域的**監督標籤**」，不是 encoder 表徵。
+   （DAPT 之後可在 test 1100 篇釋出、語料變大後，疊在實驗 3 上再評估。）
 
 5. **最有希望的一步：換訓練資料的「語域」。** 與其只靠 EmoBank，引入 **DSA-MST（醫療反思）**
    與 **ROCLING-2021（教育反思）**——同為第一人稱情緒反思、VA 1–9、繁中，且 arousal 變異度
