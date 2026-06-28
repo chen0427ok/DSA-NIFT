@@ -102,13 +102,13 @@ python prepare_data.py      # 產生 data/train.csv, dev.csv, val_unlabeled.csv
 - **Valid set (dev)**：調參與 early-stop 用，**不參與訓練**。
 - **Submission set**：官方 DSANIDF validation 200 篇——**兩個實驗都用同一份**，輸出上傳評分。
 
-| | 實驗 1：Baseline | 實驗 2：DAPT |
-|---|---|---|
-| Encoder | macbert-base | macbert-base |
-| DAPT | 無 | 在新住民 200 篇做 MLM 續訓 (30 ep) |
-| **Train set** | EmoBank CVAS+CVAT (4,998) | EmoBank CVAS+CVAT (4,998) |
-| **Valid set (dev)** | EmoBank 切出 (~555) | EmoBank 切出 (~555) |
-| **Submission set** | DSANIDF validation 200 | DSANIDF validation 200 |
+| | 實驗 1：Baseline | 實驗 2：DAPT | 實驗 3：反思語料版 |
+|---|---|---|---|
+| Encoder | macbert-base | macbert-base | macbert-base |
+| DAPT | 無 | 新住民 200 篇 MLM (30 ep) | _(待定)_ |
+| **Train set** | EmoBank CVAS+CVAT (4,998) | EmoBank CVAS+CVAT (4,998) | EmoBank + DSA-MST + ROCLING-2021 (9,435) |
+| **Valid set (dev)** | EmoBank 切出 (~555) | EmoBank 切出 (~555) | DSA-MST 反思切出 (253) |
+| **Submission set** | DSANIDF validation 200 | DSANIDF validation 200 | DSANIDF validation 200 |
 
 ### 結果
 
@@ -120,9 +120,17 @@ python prepare_data.py      # 產生 data/train.csv, dev.csv, val_unlabeled.csv
 | Arousal | 0.985 | **0.412** |
 
 **實驗 2（DAPT）** — dev 分數（best epoch 4）：Valence PCC 0.859 / Arousal PCC 0.620。
+官方 validation 實際分數：_(待提交)_。
+
+**實驗 3（反思語料版）** — _(待跑)_
+
+| | MAE ↓ | PCC ↑ |
+|---|---|---|
+| Valence | _待填_ | _待填_ |
+| Arousal | _待填_ | _待填_ |
 
 > 注意：實驗 2 這次跑的 train set 仍是**原始 EmoBank**（157 steps ≈ 5,000 筆），
-> 尚未吃到新加的反思語料；加入反思語料的版本是下一個待跑實驗。
+> 尚未吃到新加的反思語料；實驗 3 才是真正換語域的版本。
 
 ---
 
