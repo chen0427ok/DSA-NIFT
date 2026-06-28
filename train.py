@@ -23,6 +23,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader
 from transformers import AutoTokenizer, AutoModel, get_linear_schedule_with_warmup
+from lexicon import LexiconFeaturizer, FEATURE_DIM
 
 HERE = os.path.dirname(__file__)
 LABEL_MIN, LABEL_MAX = 1.0, 9.0
@@ -50,8 +51,9 @@ def read_csv(path):
 
 
 class VADataset(Dataset):
-    def __init__(self, rows, tokenizer, max_len, has_label=True):
+    def __init__(self, rows, tokenizer, max_len, has_label=True, featurizer=None):
         self.rows, self.tok, self.max_len, self.has_label = rows, tokenizer, max_len, has_label
+        self.featurizer = featurizer  # L1: 提供時加入詞典特徵
 
     def __len__(self):
         return len(self.rows)
@@ -61,6 +63,8 @@ class VADataset(Dataset):
         enc = self.tok(r["text"], truncation=True, max_length=self.max_len,
                        padding="max_length", return_tensors="pt")
         item = {k: v.squeeze(0) for k, v in enc.items()}
+        if self.featurizer is not None:
+            item["lex_feats"] = torch.tensor(self.featurizer.featurize(r["text"]), dtype=torch.float)
         if self.has_label:
             item["labels"] = torch.tensor(
                 [norm(float(r["valence"])), norm(float(r["arousal"]))], dtype=torch.float)
@@ -68,18 +72,21 @@ class VADataset(Dataset):
 
 
 class VARegressor(nn.Module):
-    def __init__(self, model_name):
+    def __init__(self, model_name, lex_dim=0):
         super().__init__()
         self.encoder = AutoModel.from_pretrained(model_name)
+        self.lex_dim = lex_dim  # L1: >0 表示把詞典特徵 concat 進回歸頭
         h = self.encoder.config.hidden_size
-        self.head = nn.Sequential(nn.Dropout(0.1), nn.Linear(h, 2))
+        self.head = nn.Sequential(nn.Dropout(0.1), nn.Linear(h + lex_dim, 2))
 
-    def forward(self, input_ids, attention_mask, token_type_ids=None, labels=None):
+    def forward(self, input_ids, attention_mask, token_type_ids=None, lex_feats=None, labels=None):
         out = self.encoder(input_ids=input_ids, attention_mask=attention_mask,
                            token_type_ids=token_type_ids)
         # mean pooling over tokens (用 attention mask 加權)
         mask = attention_mask.unsqueeze(-1).float()
         pooled = (out.last_hidden_state * mask).sum(1) / mask.sum(1).clamp(min=1e-9)
+        if self.lex_dim and lex_feats is not None:
+            pooled = torch.cat([pooled, lex_feats], dim=-1)  # [B, h+lex_dim]
         return torch.sigmoid(self.head(pooled))  # [B,2] in (0,1)
 
 
@@ -117,6 +124,7 @@ def main():
     ap.add_argument("--lr", type=float, default=2e-5)
     ap.add_argument("--max_len", type=int, default=256)
     ap.add_argument("--seed", type=int, default=42)
+    ap.add_argument("--no_lexicon", action="store_true", help="關閉 L1 詞典特徵融合（消融用）")
     args = ap.parse_args()
 
     torch.manual_seed(args.seed)
@@ -130,10 +138,17 @@ def main():
     dev_rows = read_csv(os.path.join(args.data_dir, "dev.csv"))
     val_rows = read_csv(os.path.join(args.data_dir, "val_unlabeled.csv"))
 
-    train_loader = DataLoader(VADataset(train_rows, tok, args.max_len), batch_size=args.batch_size, shuffle=True)
-    dev_loader = DataLoader(VADataset(dev_rows, tok, args.max_len), batch_size=args.batch_size)
+    # L1: 詞典特徵融合（--no_lexicon 可關閉）
+    featurizer = None if args.no_lexicon else LexiconFeaturizer()
+    lex_dim = 0 if featurizer is None else FEATURE_DIM
+    print(f"lexicon fusion = {not args.no_lexicon} (lex_dim={lex_dim})")
 
-    model = VARegressor(args.model).to(device)
+    train_loader = DataLoader(VADataset(train_rows, tok, args.max_len, featurizer=featurizer),
+                              batch_size=args.batch_size, shuffle=True)
+    dev_loader = DataLoader(VADataset(dev_rows, tok, args.max_len, featurizer=featurizer),
+                            batch_size=args.batch_size)
+
+    model = VARegressor(args.model, lex_dim=lex_dim).to(device)
     opt = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=0.01)
     total_steps = len(train_loader) * args.epochs
     sched = get_linear_schedule_with_warmup(opt, int(0.1 * total_steps), total_steps)
@@ -166,7 +181,8 @@ def main():
     print(f"best dev score = {best_score:.4f}")
 
     # 推論官方驗證集 -> submission.csv
-    val_loader = DataLoader(VADataset(val_rows, tok, args.max_len, has_label=False), batch_size=args.batch_size)
+    val_loader = DataLoader(VADataset(val_rows, tok, args.max_len, has_label=False, featurizer=featurizer),
+                            batch_size=args.batch_size)
     model.eval()
     preds = []
     with torch.no_grad():
