@@ -9,7 +9,7 @@
 
 ---
 
-## 共同設定（三個實驗都一樣）
+## 共同設定（四個實驗都一樣）
 
 - **Encoder**：`hfl/chinese-macbert-base`
 - **架構**：encoder → attention-mask 加權 mean pooling → 2 個回歸頭（valence, arousal）
@@ -21,17 +21,18 @@
 
 ---
 
-## 三個實驗的差異
+## 四個實驗的差異
 
-| | 實驗 1：Baseline | 實驗 2：DAPT | 實驗 3：反思語料版 |
-|---|---|---|---|
-| **DAPT 續訓** | 無 | ✅ 新住民 200 篇 MLM | 無 |
-| **Train set** | EmoBank CVAS+CVAT | EmoBank CVAS+CVAT | EmoBank + DSA-MST + ROCLING-2021 |
-| **Train 筆數** | 4,998 | 4,998 | 9,435 |
-| **Val set (dev)** | EmoBank 切出（stratified）| EmoBank 切出（stratified）| DSA-MST 反思切出 |
-| **Dev 筆數** | ~555 | ~555 | 253 |
-| **每 epoch steps** | 157 | 157 | 295 |
-| **Encoder 來源** | macbert-base 原權重 | DAPT 續訓後權重 | macbert-base 原權重 |
+| | 實驗 1：Baseline | 實驗 2：DAPT | 實驗 3：反思語料版 | 實驗 4：L1 詞典融合 |
+|---|---|---|---|---|
+| **DAPT 續訓** | 無 | ✅ 新住民 200 篇 MLM | 無 | 無 |
+| **詞典特徵** | 無 | 無 | 無 | ✅ CVAW+CVAP 10 維 |
+| **Train set** | EmoBank CVAS+CVAT | EmoBank CVAS+CVAT | EmoBank + DSA-MST + ROCLING-2021 | 同實驗 3 |
+| **Train 筆數** | 4,998 | 4,998 | 9,435 | 9,435 |
+| **Val set (dev)** | EmoBank 切出（stratified）| EmoBank 切出（stratified）| DSA-MST 反思切出 | DSA-MST 反思切出 |
+| **Dev 筆數** | ~555 | ~555 | 253 | 253 |
+| **每 epoch steps** | 157 | 157 | 295 | 295 |
+| **Encoder 來源** | macbert-base 原權重 | DAPT 續訓後權重 | macbert-base 原權重 | macbert-base 原權重 |
 
 ### 實驗 1：Baseline
 - **Train**：Chinese EmoBank 的 CVAS（句）+ CVAT（篇），即 `data/orign_train_data.csv`。
