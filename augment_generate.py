@@ -102,6 +102,21 @@ def generate_bin(provider, client, model, ParsedModel, seed_words, desc, n):
     return [t.strip() for t in texts if t and t.strip()]
 
 
+def _tokset(text):
+    """jieba 斷詞後的詞集合（去單字標點），用來算近似相似度。"""
+    import jieba
+    return {w for w in jieba.cut(text) if len(w.strip()) > 1}
+
+
+def _too_similar(ts, accepted, thr):
+    """ts 與任何已接受文本的 Jaccard 相似度 > thr 就算重複。"""
+    for prev in accepted:
+        union = ts | prev
+        if union and len(ts & prev) / len(union) > thr:
+            return True
+    return False
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--per_bin", type=int, default=40, help="每個 VA 區間要生幾篇")
@@ -109,6 +124,11 @@ def main():
     ap.add_argument("--jitter", type=float, default=0.4, help="VA 標籤在中心值附近的隨機抖動幅度")
     ap.add_argument("--seeds_per_bin", type=int, default=20)
     ap.add_argument("--seed", type=int, default=42)
+    ap.add_argument("--dedup_threshold", type=float, default=0.5,
+                    help="近似去重門檻（Jaccard 詞集相似度 > 此值就丟棄）")
+    ap.add_argument("--no_dedup", action="store_true", help="關閉去重")
+    ap.add_argument("--max_calls_per_bin", type=int, default=12,
+                    help="每區間最多呼叫幾次 API（去重丟太多時的安全上限）")
     ap.add_argument("--provider", choices=["anthropic", "openai"], default="anthropic")
     ap.add_argument("--model", default=None, help="覆寫模型；預設依 provider（claude-opus-4-8 / gpt-4o）")
     ap.add_argument("--out", default=os.path.join(DATA, "train_aug.csv"))
@@ -132,6 +152,8 @@ def main():
         print(f"provider={args.provider}  model={model}")
 
     rows = []
+    accepted = []   # 跨所有 bin 的已接受文本詞集，連跨區間重複也擋
+    dropped_total = 0
     for i, (vc, ac, vr, ar, desc) in enumerate(TARGET_BINS):
         seeds = seeds_for_target(G, v_range=vr, a_range=ar, n=args.seeds_per_bin)
         seed_words = [w for w, _, _ in seeds]
@@ -143,14 +165,23 @@ def main():
             print("  " + build_prompt(seed_words, desc, min(args.chunk, args.per_bin)).replace("\n", "\n  "))
             continue
 
-        texts = []
-        while len(texts) < args.per_bin:
+        texts, calls = [], 0
+        while len(texts) < args.per_bin and calls < args.max_calls_per_bin:
             need = min(args.chunk, args.per_bin - len(texts))
             got = generate_bin(args.provider, client, model, ParsedModel, seed_words, desc, need)
+            calls += 1
             if not got:
                 print("  ⚠ 這批回傳 0 篇，跳出避免無限迴圈"); break
-            texts.extend(got)
-            print(f"  已生成 {len(texts)}/{args.per_bin}")
+            for t in got:
+                if not args.no_dedup:
+                    ts = _tokset(t)
+                    if _too_similar(ts, accepted, args.dedup_threshold):
+                        dropped_total += 1; continue
+                    accepted.append(ts)
+                texts.append(t)
+            print(f"  已接受 {len(texts)}/{args.per_bin}（呼叫 {calls} 次，累計去重丟棄 {dropped_total}）")
+        if len(texts) < args.per_bin:
+            print(f"  ⚠ 達呼叫上限仍只湊到 {len(texts)} 篇（去重太嚴可放寬 --dedup_threshold 或加 --max_calls_per_bin）")
 
         for t in texts[:args.per_bin]:
             v = round(min(9.0, max(1.0, vc + random.uniform(-args.jitter, args.jitter))), 2)
@@ -167,7 +198,7 @@ def main():
     with open(args.out, "w", encoding="utf-8", newline="") as f:
         w = csv.DictWriter(f, fieldnames=fields)
         w.writeheader(); w.writerows(rows)
-    print(f"\n✓ 生成 {len(rows)} 篇 → {args.out}")
+    print(f"\n✓ 生成 {len(rows)} 篇 → {args.out}（去重共丟棄 {dropped_total} 篇）")
 
     if args.append:
         train_path = os.path.join(DATA, "train.csv")
