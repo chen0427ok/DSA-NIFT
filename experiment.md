@@ -54,6 +54,17 @@
 - **模型/訓練**：macbert-base 直接微調（無 DAPT），超參同上。
 - **目的**：把訓練的「監督語域」換成第一人稱情緒反思，補 label 層級的領域落差。
 
+### 實驗 4：L1 情感詞典特徵融合 ✅ 目前最佳
+- **Train / Val**：與實驗 3 相同（train.csv 9,435 / DSA-MST dev 253）。
+- **唯一新增**：`lexicon.py` 用 Chinese EmoBank 的 **CVAW(字)+CVAP(詞) 共 7,761 個 VA 詞典**，
+  對每篇文本抽 **10 維情緒詞聚合特徵**（coverage / count / V·A 的 mean·max·min·std），
+  concat 進 BERT pooled embedding 後再進回歸頭（`nn.Linear(768+10, 2)`）。
+- **目的**：給模型一個顯性的「這篇有哪些高/低喚醒詞」訊號，直攻 arousal。
+- **結果**：**4 指標全面贏過實驗 3**——Valence MAE 0.627→0.600、Valence PCC 0.870→0.880、
+  Arousal MAE 0.944→0.882、**Arousal PCC 0.388→0.426**。詞典的顯性 VA 訊號同時改善了校準（MAE）
+  與排序（PCC），arousal 預測 std 從 0.755 更接近真實分布。
+- **dev**：epoch 2 最佳（V_PCC 0.815 / A_PCC 0.609），與實驗 3 一致在第 2–3 epoch 後過擬合。
+
 ---
 
 ## 結果（官方 validation 實際分數）
@@ -62,13 +73,17 @@
 |---|---|---|---|---|
 | 1. Baseline | 0.654 | 0.867 | 0.985 | 0.412 |
 | 2. DAPT | 0.649 | 0.866 | 1.009 | 0.395 |
-| 3. 反思語料 | **0.627** | **0.870** | **0.944** | 0.388 |
+| 3. 反思語料 | 0.627 | 0.870 | 0.944 | 0.388 |
+| **4. L1 詞典融合** | **0.600** | **0.880** | **0.882** | **0.426** |
 
-（實驗 2 dev 最佳 epoch 4：V_PCC 0.859 / A_PCC 0.620；實驗 3 dev 最佳 epoch 3：V_PCC 0.822 / A_PCC 0.599）
+（實驗 2 dev 最佳 epoch 4：V_PCC 0.859 / A_PCC 0.620；實驗 3 dev 最佳 epoch 3：V_PCC 0.822 / A_PCC 0.599；
+實驗 4 dev 最佳 epoch 2：V_PCC 0.815 / A_PCC 0.609）
 
 ## 重點觀察
-1. **Valence 已接近上限**（PCC ~0.87），**Arousal PCC 是瓶頸**（~0.39–0.41）。
+1. **Valence 已接近上限**（PCC ~0.88），**Arousal PCC 一直是瓶頸**（~0.39–0.43）。
 2. **DAPT（小語料 + 舊資料）沒幫助**，arousal 反而略退 → 缺的是「對的語域的監督標籤」，不是 encoder 表徵。
-3. **實驗 3 修好了校準**（arousal 預測 std 0.68→0.81、雙 MAE 下降、4 指標贏 3 項），
-   但**沒修好排序**（arousal PCC）。dev arousal PCC 在 epoch 1 即到頂後下滑 → 已輕微 overfit，加 epoch 無益。
-4. 下一步應**專攻 arousal PCC**（multi-seed ensemble / 消融 edu2021 / 更強 encoder），而非加訓練量或 epoch。
+3. **實驗 3 修好了校準**（雙 MAE 下降、4 指標贏 3 項），但**沒修好排序**（arousal PCC 仍 0.388）。
+4. **實驗 4（L1 詞典融合）是第一個 4 指標全勝的版本**：顯性 VA 詞典特徵同時抬升了 arousal 的
+   校準與排序（PCC 0.388→0.426），證明「contextual embedding + lexical VA 訊號」互補有效。
+5. 下一步仍應**專攻 arousal PCC**：multi-seed ensemble（兩篇得獎論文共識的最大槓桿）、
+   更強 encoder（roberta-wwm-ext-large）、把 L2 word→VA 回歸器接進 L1 當額外特徵。
