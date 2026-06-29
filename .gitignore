@@ -5,3 +5,5 @@ outputs/
 .DS_Store
 .ipynb_checkpoints/
 .venv/
+data/train_aug.csv
+data/train_base.csv
