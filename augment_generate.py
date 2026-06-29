@@ -7,13 +7,19 @@ L3（第二步）— 情感知識圖譜 × Claude API 可控生成資料增強�
 
 直接攻擊我們最痛的 arousal 分布壓縮問題：靠合成資料把高/低喚醒的樣本補回來。
 
-用法：
+用法（兩家 LLM 擇一；本地或 Colab 都能跑，純 API 不需 GPU）：
+    # Claude（預設）
     export ANTHROPIC_API_KEY=sk-ant-...
-    python augment_generate.py --per_bin 40          # 每個 VA 區間生 40 篇
-    python augment_generate.py --dry_run             # 不呼叫 API，只印種子詞與 prompt（驗證用）
-    python augment_generate.py --append               # 生成後直接併進 data/train.csv（會先備份 train_base.csv）
+    python augment_generate.py --per_bin 40
 
-需要：anthropic SDK（pip install anthropic）、環境變數 ANTHROPIC_API_KEY。
+    # OpenAI
+    export OPENAI_API_KEY=sk-...
+    python augment_generate.py --provider openai --per_bin 40
+
+    python augment_generate.py --dry_run     # 不呼叫 API，只印種子詞與 prompt（驗證用）
+    python augment_generate.py --append      # 生成後併進 data/train.csv（先備份 train_base.csv）
+
+需要：pip install anthropic（或 openai）pydantic；對應的 *_API_KEY 環境變數。
 """
 import os
 import csv
@@ -26,7 +32,8 @@ from affective_graph import build_graph, seeds_for_target
 HERE = os.path.dirname(__file__)
 OUT = os.path.join(HERE, "outputs")
 DATA = os.path.join(HERE, "data")
-MODEL = "claude-opus-4-8"
+# 各 provider 的預設模型（可用 --model 覆寫）
+DEFAULT_MODELS = {"anthropic": "claude-opus-4-8", "openai": "gpt-4o"}
 
 # 目標 VA bins（1–9 量尺）。重點補 arousal 高/低兩端（瓶頸），valence 各區都鋪。
 # (v_center, a_center, v_range, a_range, 情緒描述)
@@ -64,15 +71,35 @@ def build_prompt(seed_words, desc, n):
     )
 
 
-def generate_bin(client, ParsedModel, seed_words, desc, n):
-    """呼叫 Claude 生成 n 段短文，回傳 list[str]。"""
-    resp = client.messages.parse(
-        model=MODEL,
-        max_tokens=8000,
-        messages=[{"role": "user", "content": build_prompt(seed_words, desc, n)}],
-        output_format=ParsedModel,
-    )
-    return [t.strip() for t in resp.parsed_output.texts if t and t.strip()]
+def make_client(provider):
+    """建立 LLM client（讀對應的環境變數 API key）。"""
+    if provider == "anthropic":
+        import anthropic
+        return anthropic.Anthropic()          # 讀 ANTHROPIC_API_KEY
+    elif provider == "openai":
+        from openai import OpenAI
+        return OpenAI()                        # 讀 OPENAI_API_KEY
+    raise ValueError(f"未知 provider: {provider}")
+
+
+def generate_bin(provider, client, model, ParsedModel, seed_words, desc, n):
+    """呼叫 LLM 生成 n 段短文，回傳 list[str]。兩家都用 structured output 拿乾淨陣列。"""
+    prompt = build_prompt(seed_words, desc, n)
+    if provider == "anthropic":
+        resp = client.messages.parse(
+            model=model, max_tokens=8000,
+            messages=[{"role": "user", "content": prompt}],
+            output_format=ParsedModel,
+        )
+        texts = resp.parsed_output.texts
+    else:  # openai
+        resp = client.beta.chat.completions.parse(
+            model=model,
+            messages=[{"role": "user", "content": prompt}],
+            response_format=ParsedModel,
+        )
+        texts = resp.choices[0].message.parsed.texts
+    return [t.strip() for t in texts if t and t.strip()]
 
 
 def main():
@@ -82,24 +109,27 @@ def main():
     ap.add_argument("--jitter", type=float, default=0.4, help="VA 標籤在中心值附近的隨機抖動幅度")
     ap.add_argument("--seeds_per_bin", type=int, default=20)
     ap.add_argument("--seed", type=int, default=42)
+    ap.add_argument("--provider", choices=["anthropic", "openai"], default="anthropic")
+    ap.add_argument("--model", default=None, help="覆寫模型；預設依 provider（claude-opus-4-8 / gpt-4o）")
     ap.add_argument("--out", default=os.path.join(DATA, "train_aug.csv"))
     ap.add_argument("--append", action="store_true", help="生成後併進 data/train.csv（先備份 train_base.csv）")
     ap.add_argument("--dry_run", action="store_true", help="不呼叫 API，只印種子詞與 prompt")
     args = ap.parse_args()
     random.seed(args.seed)
+    model = args.model or DEFAULT_MODELS[args.provider]
 
     G = load_graph()
 
     client = ParsedModel = None
     if not args.dry_run:
-        import anthropic
         from pydantic import BaseModel
 
         class GeneratedTexts(BaseModel):
             texts: list[str]
 
         ParsedModel = GeneratedTexts
-        client = anthropic.Anthropic()  # 讀 ANTHROPIC_API_KEY
+        client = make_client(args.provider)
+        print(f"provider={args.provider}  model={model}")
 
     rows = []
     for i, (vc, ac, vr, ar, desc) in enumerate(TARGET_BINS):
@@ -116,7 +146,7 @@ def main():
         texts = []
         while len(texts) < args.per_bin:
             need = min(args.chunk, args.per_bin - len(texts))
-            got = generate_bin(client, ParsedModel, seed_words, desc, need)
+            got = generate_bin(args.provider, client, model, ParsedModel, seed_words, desc, need)
             if not got:
                 print("  ⚠ 這批回傳 0 篇，跳出避免無限迴圈"); break
             texts.extend(got)
