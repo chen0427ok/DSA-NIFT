@@ -128,7 +128,10 @@
   - **診斷**：multi-encoder ensemble 只穩定方差、**沒突破 arousal 天花板**；平均把 arousal 預測壓縮/糊化，
     連 A_MAE 都變差；roberta-large（最弱）進 ensemble 稀釋 arousal 訊號。
   - **結論**：**堆模型 / 融合對 arousal PCC 是死路**（官方驗證）。唯一破過 0.43 的仍是實驗 9 的合成資料（0.46）
-    → 回到 E13（teacher 偽標精修）。**E10 純 macbert 版（`e10_seed_ens`）另備一份提交，測是否比 E12 略好。**
+    → 回到 E13（teacher 偽標精修）。
+  - **E10 官方（純 macbert 5-seed）= A_PCC 0.415，與 E12 幾乎相同、同樣輸實驗 4** → **證實傷害不是 roberta-large，
+    而是「多模型平均」本身把已壓縮的 arousal 再壓一次**（校準與排序雙輸）；batch 64（vs 實驗 4 的 32）可能讓每顆
+    seed 也略弱。**ensemble 路線 E10/E11/E12 全數確認為死路，實驗 4 維持最佳提交。**
   - 交付物：`outputs/{macbert_s*,roberta_s42,robertaL_s42}_best.pt`（7 顆，E13 的 teacher）、
     `outputs/preds/*`（統一預測，供 ensemble/校準）、各 `*_submission.csv`。
 
@@ -145,6 +148,7 @@
 | 5. L3 生成增強（#9，bin 中心標籤） | 0.611 | 0.870 | 1.100 🔴 | **0.461** 🟢 |
 | 5b. L3 增強（標籤收縮 k=0.6） | 0.632 | 0.874 | 1.058 🔴 | 0.460 🟢 |
 | 12. 多 encoder Ensemble（E12） | 0.613 | 0.882 | 0.906 🔴 | 0.418 🔴 |
+| 10. 純 macbert 5-seed Ensemble（E10） | 0.614 | 0.881 | 0.907 🔴 | 0.415 🔴 |
 
 （實驗 2 dev 最佳 epoch 4：V_PCC 0.859 / A_PCC 0.620；實驗 3 dev 最佳 epoch 3：V_PCC 0.822 / A_PCC 0.599；
 實驗 4 dev 最佳 epoch 2：V_PCC 0.815 / A_PCC 0.609）
