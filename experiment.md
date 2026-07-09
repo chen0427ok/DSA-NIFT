@@ -9,6 +9,37 @@
 
 ---
 
+## 資料集（Dataset）
+
+**關鍵前提：官方 DSA-NIDF 未提供「有標註」的訓練資料**，只給 `val_unlabeled.csv`（200 篇新住民文本，
+**無標籤**，即提交目標）。因此**全部訓練標註都來自相鄰域的借用語料**——沒有任何目標域（新住民反思）的監督樣本。
+這是本任務 low-resource / zero in-domain label 的本質，也是 arousal 難的根源（目標域 arousal 分布無監督訊號）。
+
+### 訓練集 `data/train.csv`（9,435 筆，`prepare_data.py` 合併）
+| 來源 | 筆數 | granularity | 說明 |
+|---|---|---|---|
+| Chinese EmoBank — CVAS | 2,583 | `sentence` | 中文情感庫，**句子級** VA（1–9） |
+| Chinese EmoBank — CVAT | 2,970 | `text` | 中文情感庫，**篇章級** VA |
+| DSA-MST（ROCLING-2025） | 2,282 | `reflection` | 去年同型任務的**醫療自我反思**（全 2,535，另 253 切為 dev） |
+| ROCLING-2021 | 1,600 | `edu2021` | **教育反思**短文 |
+
+- **dev `data/dev.csv`（253 筆）**：從 DSA-MST 反思切出——最接近目標域，避免拿 EmoBank 當 dev 高估。
+  ⚠️ 但**與合成資料同風格**，故增強實驗的 dev 分數失真、不可信（見實驗 9 / E13）。
+- **EmoBank-only 舊版** `data/orign_train_data.csv`（4,998 筆）：實驗 1–2 用，現保留供復現。
+
+### 合成資料（獨立檔，非預設併入 train.csv）
+| 檔案 | 筆數 | 說明 |
+|---|---|---|
+| `data/train_aug.csv` | 400 | **Opus 4.8 生成**的新住民第一人稱反思（L3 圖譜引導、5 個 VA 象限各 80），gitignore、僅本機 |
+| `data/train_aug_pseudo.csv` | 318 | 上者經 3 顆 teacher 逐篇重標 + 每 bin ±1.5SD 離群移除（E13 用，已入 branch） |
+
+> **`train_aug.csv` 是唯一「目標域風格 × 目標 arousal 區間」的監督樣本**，故實驗 9 能提 A_PCC（補了別處都沒有的洞）。
+
+### 外部詞典（特徵/資源用，非訓練樣本）
+- `external/emobank/`：CVAW（字，5,512）+ CVAP（詞）= **7,761 VA 詞典**，餵 L1（`lexicon.py`）與 L2/L3。
+
+---
+
 ## 共同設定（四個實驗都一樣）
 
 - **Encoder**：`hfl/chinese-macbert-base`

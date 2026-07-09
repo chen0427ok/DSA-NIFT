@@ -20,6 +20,29 @@
 
 ---
 
+## 1.5 資料集（Dataset）
+
+**關鍵前提：官方 DSA-NIDF 沒給「有標註」的訓練資料**，只給 `val_unlabeled.csv`（200 篇新住民文本，**無標籤**=提交目標）。
+所以**全部訓練標註都是相鄰域的借用語料，零目標域監督樣本** → 這是 low-resource 本質、也是 arousal 難的根源。
+
+**訓練集 `data/train.csv`（9,435）= `prepare_data.py` 合併：**
+| 來源 | 筆數 | granularity | 說明 |
+|---|---|---|---|
+| Chinese EmoBank CVAS | 2,583 | `sentence` | 句子級 VA |
+| Chinese EmoBank CVAT | 2,970 | `text` | 篇章級 VA |
+| DSA-MST（ROCLING-2025 醫療反思） | 2,282 | `reflection` | 全 2,535，另 253 → dev |
+| ROCLING-2021 教育反思 | 1,600 | `edu2021` | 教育反思短文 |
+
+- **dev（253）** 從 DSA-MST 切（最接近目標域，但與合成資料同風格 → 增強實驗 dev 失真）。
+- **合成**：`data/train_aug.csv`（400，Opus 4.8 生成、L3 引導、gitignore）、`data/train_aug_pseudo.csv`（318，teacher 重標）。
+  `train_aug.csv` 是**唯一「目標域風格 × 目標 arousal 區間」的監督樣本**（實驗 9 提 A_PCC 的來源）。
+- **詞典**：`external/emobank/` CVAW+CVAP = 7,761 VA 詞典（餵 L1/L2/L3，非訓練樣本）。
+- `data/orign_train_data.csv`（4,998，EmoBank-only）：實驗 1–2 用，保留供復現。
+
+詳細 dataset 章節見 `experiment.md`。
+
+---
+
 ## 2. 目前最佳模型 = 實驗 4（L1 詞典融合）✅ 提交用這個
 
 | 實驗 | Valence MAE ↓ | Valence PCC ↑ | Arousal MAE ↓ | Arousal PCC ↑ |
