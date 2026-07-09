@@ -114,6 +114,26 @@
 
 ---
 
+## 實驗 10–12：Multi-seed + 多 encoder Ensemble（A100，`train_v2.py` / `ensemble.py`）
+
+- **基礎**：實驗 4（L1 詞典融合）架構不變；`train_v2.py` 預設參數復現實驗 4，僅 batch 32→64（A100，dev 與 32 一致）。
+- **E10**：MacBERT+L1 跑 5 個 seed（42/1/2/3/4），`ensemble.py --mode mean` 等權平均。
+- **E11**：RoBERTa-wwm-ext（base）與 **-large**（batch 16, lr 1e-5）各一顆 + L1。
+- **E12**：把 E10 五顆 + E11 兩顆做 dimension-wise weighted / mean 融合（V/A 分開權重）。
+- **dev（DSA-MST 253）**：各單顆 A_PCC 0.60–0.615；E10 融合 A_PCC 0.616、E12 A_PCC 0.615；
+  roberta-large 最弱（dev A_PCC 0.584、epoch 3–4 過擬合）。dev 全部落在 A_PCC≈0.61，與實驗 4 dev 一致。
+- **結果（E12 官方）：4 指標輸實驗 4 三項，只在 V_PCC 微贏 0.002 → 不採用。**
+  - Valence MAE 0.600→**0.613**、Valence PCC 0.880→**0.882**（微升）。
+  - Arousal MAE 0.882→**0.906**（🔴）、**Arousal PCC 0.426→0.418（🔴 不升反降）**。
+  - **診斷**：multi-encoder ensemble 只穩定方差、**沒突破 arousal 天花板**；平均把 arousal 預測壓縮/糊化，
+    連 A_MAE 都變差；roberta-large（最弱）進 ensemble 稀釋 arousal 訊號。
+  - **結論**：**堆模型 / 融合對 arousal PCC 是死路**（官方驗證）。唯一破過 0.43 的仍是實驗 9 的合成資料（0.46）
+    → 回到 E13（teacher 偽標精修）。**E10 純 macbert 版（`e10_seed_ens`）另備一份提交，測是否比 E12 略好。**
+  - 交付物：`outputs/{macbert_s*,roberta_s42,robertaL_s42}_best.pt`（7 顆，E13 的 teacher）、
+    `outputs/preds/*`（統一預測，供 ensemble/校準）、各 `*_submission.csv`。
+
+---
+
 ## 結果（官方 validation 實際分數）
 
 | 實驗 | Valence MAE ↓ | Valence PCC ↑ | Arousal MAE ↓ | Arousal PCC ↑ |
@@ -124,6 +144,7 @@
 | **4. L1 詞典融合** | **0.600** | **0.880** | **0.882** | **0.426** |
 | 5. L3 生成增強（#9，bin 中心標籤） | 0.611 | 0.870 | 1.100 🔴 | **0.461** 🟢 |
 | 5b. L3 增強（標籤收縮 k=0.6） | 0.632 | 0.874 | 1.058 🔴 | 0.460 🟢 |
+| 12. 多 encoder Ensemble（E12） | 0.613 | 0.882 | 0.906 🔴 | 0.418 🔴 |
 
 （實驗 2 dev 最佳 epoch 4：V_PCC 0.859 / A_PCC 0.620；實驗 3 dev 最佳 epoch 3：V_PCC 0.822 / A_PCC 0.599；
 實驗 4 dev 最佳 epoch 2：V_PCC 0.815 / A_PCC 0.609）
@@ -140,3 +161,8 @@
 6. 下一步仍應**專攻 arousal PCC**：先把實驗 9b 的校準修好（最有機會 4 指標全勝）、
    multi-seed ensemble（兩篇得獎論文共識的最大槓桿）、更強 encoder（roberta-wwm-ext-large）、
    把 L2 word→VA 回歸器接進 L1 當額外特徵。
+7. **實驗 12（多 encoder ensemble）已用官方分數證明是死路**：A_PCC 0.426→0.418（不升反降），4 指標輸實驗 4 三項。
+   ensemble 只穩方差、平均壓縮 arousal 反傷校準；roberta-large 最弱還拖累。
+   **⇒ 堆模型/融合無法突破 arousal 天花板，唯一破 0.43 的仍是合成資料（實驗 9 = 0.46）。**
+   下一步 **E13：用實驗 10–12 的 7 顆 teacher 對合成文本逐篇偽標精修 + 每 bin ±1.5SD 離群移除**
+   （`build_pseudo_labels.py`），目標留住實驗 9 的 A_PCC 增益、修回被 bin 弱標籤搞爆的 A_MAE。
