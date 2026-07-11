@@ -195,15 +195,25 @@
   （官方 A_PCC：e19 0.452 ＞ e20 0.407）→ silver 量的是 pairwise 排序一致性，與 PCC（受分布形狀影響）
   不完全等價，且目前只有單一 judge。**當否決訊號（篩掉明顯壞的 run）比當「選第一名」可靠。**
 
-### 官方結果（e19 / e20 / e21b 已提交）
+### 官方結果（e18 / e19 / e20 / e21b / robertaL_s42 已提交）
 
 - **E19 = arousal 首次「雙贏」**：A_MAE **0.882→0.870**（優於實驗 4）且 A_PCC **0.426→0.452**
   （所有 A_MAE 未爆的模型中最高；實驗 9 的 0.461 伴隨 A_MAE 1.10）。**代價在 valence**：
   V_MAE 0.600→0.666、V_PCC 0.880→0.869。4 指標 2 勝 2 敗，與實驗 4 互補。
   - **診斷**：CVAS/CVAT 的 arousal 降權讓模型少學通用情緒庫的 arousal 慣性、多信反思語料 →
     arousal 排序與校準同升。V 權重全為 1.0 卻變差，可能是 loss 重新配比的間接影響，值得解耦實驗。
+- **E18 單獨用反而傷 arousal（A_PCC 0.426→0.408、A_MAE 0.882→0.909，四指標全輸實驗 4）。**
+  - **關鍵消融發現**：E19 = E18 + source_aware，而 E18 官方 0.408 ＜ E4 0.426 ＜ E19 0.452 →
+    **E19 的增益全部來自 source-aware 加權，31 維強度特徵本身是拖累**（可能 overfit 到訓練域的表面 cue）。
+  - **⇒ 高價值待跑實驗：「原始 10 維 L1 + source_aware」（`--lex_mode l1 --source_aware`）**——
+    拿掉可能有害的強度特徵，有機會 arousal 比 E19 更好、valence 退化也更小。
 - **E20 / E21b 官方皆輸實驗 4**（A_PCC 0.407 / 0.394）：ranking-only 增強把 val arousal 分布撐開
   （std 0.74–0.83）但沒轉成 PCC；dim attention 屬目標域過擬合（dev 好看、官方最差）。
+- **robertaL_s42（E11b 單顆）四指標全輸**（V_MAE 0.691 最差、A_PCC 0.407）：
+  驗證了提交前的預警——silver 只量排序，它 val arousal std 全場最窄（0.67）、dev A_MAE 最差，校準果然不行。
+- **Silver ranking 結論更新**：它押的前兩名 e20（0.766）/ e18（0.762）官方全敗給它排 0.748 的 e19 →
+  **正向排序不可信，僅作否決過濾器**（對 e21 墊底的否決仍是準的）。可能原因：LLM judge 的排序偏好
+  與 gold 標註者的 PCC 結構不同、單一 judge 偏誤、pairwise accuracy 對分布形狀不敏感。
 
 ---
 
@@ -220,7 +230,9 @@
 | 12. 多 encoder Ensemble（E12） | 0.613 | 0.882 | 0.906 🔴 | 0.418 🔴 |
 | 10. 純 macbert 5-seed Ensemble（E10） | 0.614 | 0.881 | 0.907 🔴 | 0.415 🔴 |
 | 13. Teacher 偽標增強（E13，blend=0） | 0.617 | 0.878 | 0.898 | 0.423 |
+| 18. L1++ intensity 31 維（E18） | 0.641 🔴 | 0.865 | 0.909 🔴 | 0.408 🔴 |
 | **19. Source-aware arousal loss（E19）** | 0.666 🔴 | 0.869 | **0.870** 🟢 | **0.452** 🟢 |
+| 11b. RoBERTa-large 單顆（robertaL_s42） | 0.691 🔴 | 0.869 | 0.914 🔴 | 0.407 🔴 |
 | 20. Ranking-only 增強（E20） | 0.631 | 0.877 | 0.923 🔴 | 0.407 🔴 |
 | 21. Dim-attention + rank（E21b） | 0.638 | 0.865 | 0.923 🔴 | 0.394 🔴 |
 
@@ -257,8 +269,11 @@
    - 這是第一個**不靠合成資料就把 A_PCC 推過 0.45** 的模型，且 A_MAE 同時優於實驗 4 →
      證明「來源加權」直接處理了 arousal 的 domain shift，繞開了校準↔排序 trade-off。
    - 與實驗 4 形成互補：實驗 4 贏 valence 雙指標、E19 贏 arousal 雙指標（官方計分 = 4 指標 mean rank，兩者相當）。
-   - **下一步方向**：解耦 valence 退化——(a) 調 `--source_weights` 讓 V 少受影響（如 CVAS/CVAT 的 V 權重 >1 補償）；
-     (b) V/A 分頭訓練或分頭 early-stop；(c) E26 校準只修 E19 的 V_MAE。
-   - **E20/E21 確認淘汰**：ranking loss 與 dim attention 在官方分數上皆全面輸實驗 4。
-   - **Silver ranking benchmark 首次實戰**：否決 e21 準確、e19/e20 排序誤判 → 定位為「篩壞的」工具，
-     花提交額度前先過濾，但不能取代官方分數選最佳。
+   - **E18 官方揭露關鍵消融**：E18（31 維強度特徵）單獨用 A_PCC 0.408 反而低於 E4 的 0.426 →
+     E19（=E18+source_aware）的 0.452 **增益全來自 source-aware，強度特徵是拖累**。
+   - **下一步方向（優先序）**：(a) **`--lex_mode l1 --source_aware`（10 維 L1 + 來源加權，拿掉有害特徵）**
+     ——最有機會同時修 arousal 與 valence 的一發；(b) 調 `--source_weights` 讓 V 少受影響
+     （如 CVAS/CVAT 的 V 權重 >1 補償）；(c) V/A 分頭 early-stop；(d) E26 校準只修 E19 的 V_MAE。
+   - **E20/E21/robertaL 確認淘汰**：ranking loss、dim attention、大 encoder 單顆在官方分數上皆全面輸實驗 4。
+   - **Silver ranking benchmark 首次實戰**：否決 e21 準確，但押的前兩名 e20/e18 官方全敗 →
+     定位為「篩壞的」否決工具（花提交額度前過濾），正向排序不可信、不能取代官方分數選最佳。

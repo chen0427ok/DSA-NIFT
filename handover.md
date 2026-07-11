@@ -56,13 +56,17 @@
 | 10. 純 macbert 5-seed Ensemble | 0.614 | 0.881 | 0.907 🔴 | 0.415 🔴 |
 | 12. 多 encoder Ensemble | 0.613 | 0.882 | 0.906 🔴 | 0.418 🔴 |
 | 13. Teacher 偽標增強（blend=0） | 0.617 | 0.878 | 0.898 | 0.423 |
+| 18. L1++ intensity 31 維（E18） | 0.641 🔴 | 0.865 | 0.909 🔴 | 0.408 🔴 |
 | **19. Source-aware arousal loss** ⭐ | 0.666 🔴 | 0.869 | **0.870** 🟢 | **0.452** 🟢 |
 | 20. Ranking-only 增強（E20） | 0.631 | 0.877 | 0.923 🔴 | 0.407 🔴 |
 | 21. Dim-attention + rank（E21b） | 0.638 | 0.865 | 0.923 🔴 | 0.394 🔴 |
+| 11b. RoBERTa-large 單顆 | 0.691 🔴 | 0.869 | 0.914 🔴 | 0.407 🔴 |
 
 **E19 是第一個不靠合成資料把 A_PCC 推過 0.45 的模型，且 A_MAE 同時優於實驗 4（arousal 雙贏）；
 代價是 valence 退化（V_MAE 0.666）→ 與實驗 4 各贏兩指標，官方 mean rank 相當。**
-E20（ranking-only）/ E21（dim attention）官方確認淘汰。完整細節見 `experiment.md` 實驗 18–21 章。
+E18/E20/E21/robertaL 官方確認淘汰。**E18 官方分數揭露：E19 的增益全來自 source-aware 加權、
+31 維強度特徵反而有害 → 下一發首選 `--lex_mode l1 --source_aware`（10 維 L1 + 來源加權）。**
+完整細節見 `experiment.md` 實驗 18–21 章。
 
 - 架構：`hfl/chinese-macbert-base` → attention-mask 加權 mean pooling → 2 個回歸頭（V/A）。
 - L1 創新：`lexicon.py` 用 Chinese EmoBank 的 **CVAW(字)+CVAP(詞) 共 7,761 詞典**抽 **10 維情緒特徵**，
