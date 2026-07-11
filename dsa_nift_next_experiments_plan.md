@@ -77,6 +77,12 @@ hfl/chinese-macbert-base
 | multi-seed ensemble | 0.614 | 0.881 | 0.907 | 0.415 |
 | multi-encoder ensemble | 0.613 | 0.882 | 0.906 | 0.418 |
 | teacher pseudo-label | 0.617 | 0.878 | 0.898 | 0.423 |
+| **E19 source-aware loss** | 0.666 | 0.869 | **0.870** | **0.452** |
+| E20 ranking-only 增強 | 0.631 | 0.877 | 0.923 | 0.407 |
+| E21b dim-attention + rank | 0.638 | 0.865 | 0.923 | 0.394 |
+
+> **2026-07-11 官方結果更新**：E19 為 arousal 雙贏新突破（A_MAE/A_PCC 皆優於實驗 4，但 valence 退化，
+> 兩者各贏 2 指標）；E20 / E21 官方確認淘汰；E18 / E21a 未提交。詳見 `experiment.md` 實驗 18–21 章。
 
 ### 1.2 目前最重要的診斷
 
