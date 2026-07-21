@@ -20,37 +20,57 @@
 
 ---
 
-## 🚨 P0-A — 最高優先：把「我們是不是選錯模型」在 test 上問清楚
+## ✅ P0-A — 已完成，而且拿到了論文最強的結果
 
-這是**整篇論文的樞紐**。目前我們只知道 E19 在 test 上 A_PCC 0.357，
-但**不知道 E4（valence 最佳的那顆）在 test 上是多少**。兩種結果導向兩種論文：
+**提交上限：每天 10 次**（截止 8/10，等於額度近乎無限——應該把所有對照都測到 test 上）。
 
-| 若 test 上… | 論文怎麼寫 |
-|---|---|
-| **E4 的 A_PCC ≳ E19** | 「我們確實選錯了」——selection overfitting 的**直接證據**，論文最強版本 |
-| **E4 的 A_PCC ≈ E19（都 ~0.36）** | 「兩者本來就沒差」——val 上的 0.026 差距純屬噪聲，同樣支持核心論點 |
-| **E4 明顯低於 E19** | source-aware 是真的有效，只是 arousal 天花板低。論文改走「方法有效但評估變異大」 |
+E4（`macbert_s42`）的 test 分數已取得：
 
-**三種結果都能寫**，但不知道就沒得寫。所以這是第一順位。
+| A_PCC | E4 | E19（實際提交） | 勝方 |
+|---|---|---|---|
+| validation（n=200） | 0.426 | **0.452** | E19（+0.026） |
+| **test（n=1,100）** | **0.37** | 0.3566 | **E4（+0.013）** |
 
-```bash
-# 已產生預測（E4 的 train_v2 復現版 = macbert_s42，10 維 L1）
-python predict.py --ckpt outputs/macbert_s42_best.pt --lex_mode l1 \
-    --input ../DSANIDF_TestSet.csv --run_name macbert_s42 --split test
-python fetch_results.py --pack macbert_s42_test      # 打包成 submission.csv.zip
-```
+**排序翻轉，且 E4 在 test 上四指標贏三項。** 完整數據見 `docs/experiments.md` §0。
+
+⇒ 論文核心 claim 從「增益消失」升級為「**我們據以決策的偏好方向是錯的**」，
+這是 selection overfitting 最有說服力的一種呈現。
+
+> ⚠️ 論述紀律：test 上 0.013 的差距同樣在噪聲裡（n=1,100 的 A_PCC CI 寬約 0.103）。
+> **不要寫「E4 比較好」**，要寫「兩者從頭到尾不可區分，而我們把不可區分當成可區分」。
 
 > ⚠️ **誠實註記**：原始實驗 4 的 checkpoint（`train.py` 產的 `best_model.pt`）已不存在，
 > `macbert_s42` 是 `train_v2.py` 的復現版，**batch size 為 64 而非 32**（E10 在 A100 上跑的）。
 > dev 分數一致（A_PCC 0.615 vs 實驗 4 的 0.609），可視為同一設定，但論文要標明這點。
 
-### 接著值得花額度的 test 提交（依價值排序）
-1. **`macbert_s42`（≈E4）** ← 上面，必做
-2. **`e18_l1_intensity`** — 補完 `lex_mode × source_aware` 2×2 的第三格，
-   直接檢驗「31 維強度特徵有害」這個在 val 上得到的結論在 test 上還成不成立
-3. **`e10_seed_ens`** — 檢驗「ensemble 對 arousal 有害」是否為 val 專屬的假象
-4. **`macbert_pseudo_s42`（E13）** 或 **實驗 5 的增強版** — 驗證「校準↔排序 trade-off」
-5. **E22**（跑完後，見 P1-1）— 2×2 的最後一格
+### 🚨 P0-B — 因為額度充足，論文的主表應該整張搬到 test set
+
+**這是現在最重要的決定。** 每天 10 次 × 20 天 ≈ 200 次額度，而我們手上只有 15 顆 checkpoint。
+既然如此，論文的主結果表就**不該是 validation 表，而該是 test 表**——
+`docs/experiments.md` §3 那張 13 列的表，每一列在 val 上的結論都可能跟 E19 一樣是雜訊。
+
+**在 n=1,100 上重測一遍，等於把整篇論文的證據基礎換成精度 2.2 倍的版本。**
+而且每一列都可能出現跟 E4/E19 一樣的反轉——那些反轉本身就是論文的內容。
+
+提交順序（依「翻盤後對論文影響最大」排序）：
+
+| 順位 | run | 在 val 上的結論 | 想驗證什麼 |
+|---|---|---|---|
+| 1 | ✅ `macbert_s42`（≈E4） | valence 最佳 | **已完成，翻轉** |
+| 2 | `e18_l1_intensity` | 「31 維強度特徵有害」 | 補完 2×2 第三格 |
+| 3 | `e10_seed_ens` | 「ensemble 是死路」 | **這條結論與領域常識相反，最需要 test 背書** |
+| 4 | `macbert_pseudo_s42`（E13） | 「偽標修校準、失排序」 | 校準↔排序 trade-off 是否成立 |
+| 5 | `e20_rank_aug` / `e21_dim_attention` | 「淘汰」 | 便宜的補完 |
+| 6 | `macbert_s1/s2/s3/s4` | — | **同設定 4 個 seed 的 test 分數 → 直接量出 test 上的 seed 變異**，取代 bootstrap 代理估計 |
+| 7 | `roberta_s42` / `robertaL_s42` | 「大 encoder 沒用」 | 補完 |
+| 8 | E22（跑完後，見 P1-1） | — | 2×2 最後一格 |
+
+> **第 6 項其實價值極高**：目前論文的變異估計是在 dev 上 bootstrap 的**代理值**。
+> 若把 4 個 seed 都提交到 test，就能得到**官方集合上真實的 seed 變異**，
+> 論文的 Table 3 可以從「proxy estimate」升級成「measured on the official test set」，
+> 直接消滅審稿人最可能攻擊的那個但書。**建議優先做，只花 4 次額度。**
+
+所有預測檔正在本機批次產生中（`predict.py`，不需 GPU）。
 
 全部 checkpoint 都在本機 `outputs/`，**推論不需要 GPU**，`predict.py` 在 M2 上跑 1,100 篇約數分鐘。
 
