@@ -153,6 +153,66 @@ E18/E20/E21/robertaL 官方確認淘汰。**E18 官方分數揭露：E19 的增�
 
 ---
 
+## 3.6 E18–E21 + Silver Ranking benchmark + E22 現況（2026-07-21 更新）
+
+「Enhanced L1」（上面 §7 舊版下一步 #1）已經跑完並提交，官方結果見 §2 表格與 `experiment.md` 實驗 18–21 章。
+這裡記本階段新增的**工具**、**silver ranking 的實戰經驗**、以及**目前卡住的 E22**。
+
+### 新增程式（`feat/ensemble-teacher-student-experiments` branch，已 push）
+| 檔案 | 用途 |
+|---|---|
+| `lexicon_intensity.py` | L1 十維 → 31 維（+15 arousal intensity + 6 新住民 domain cues），`--lex_mode l1_intensity` |
+| `train_v2.py` 新旋鈕 | `--source_aware`（依 granularity 對 V/A loss 加權）、`--rank_aug`（合成資料 ranking-only pairwise hinge）、`--pooling mean_cls_dim_attention` |
+| `Rocling2026_Colab_e18_e21.ipynb` | E18→E21 Colab 流程；cell 2 已修成「repo 存在時自動 checkout+pull」 |
+| `build_silver_pairs.py` | 對官方 200 篇無標籤文本抽 pair，LLM（claude-opus-4-8）pairwise 判斷 arousal/valence 相對高低 → `data/silver_pairs_{judge}.csv` |
+| `eval_silver_ranking.py` | 讀 silver pairs + `outputs/preds/{run}_val.csv`，算各 run 的 pairwise ranking accuracy |
+
+### Silver ranking benchmark 的真實戰績（重要，別高估它）
+動機：dev（DSA-MST）對增強類實驗會失真（實驗 9 教訓），想找一個更貼目標域的模型選擇依據。
+跑了一輪（單一 judge = claude-opus-4-8，500 pairs），結果：
+- **對 e21 的否決是準的**（silver 排最後，官方 A_PCC 也確實最差 0.394）。
+- **但對 e19/e20 的相對排序判斷錯了**：silver 押 e20（0.766）> e18（0.762）> e19（0.748，與 E4 打平）；
+  官方分數卻是 e19（A_PCC 0.452，本階段最佳）> e20（0.407）> e18（0.408）。
+- **結論／定位**：silver ranking 的 pairwise accuracy 對「排序方向」判斷不夠可靠（可能與 PCC 依賴的分布形狀無關、
+  且只有單一 judge），**只適合當「否決過濾器」（篩掉明顯壞的，如 e21），不能拿來當「選第一名」的依據**。
+  之前建議的「多 judge 一致性過濾」（`build_silver_pairs.py --provider openai` 再標一輪）**還沒做**，
+  若要讓這個工具更可信，這是下一步；但即使做了，也該把它當輔助訊號，決策仍以官方分數為準。
+
+### 關鍵消融發現：E19 的增益 100% 來自 source-aware，不是強度特徵
+把三個官方分數排起來看：
+```
+E18（31 維強度特徵，無 source_aware）   A_PCC 0.408  ← 比 E4 還差
+E4（10 維 L1，baseline）                A_PCC 0.426
+E19（31 維 + source_aware）             A_PCC 0.452  ← 目前最佳
+```
+E19 = E18 + `--source_aware`。E18 單獨用反而傷 arousal，代表 31 維強度特徵本身可能是雜訊／對訓練域過擬合，
+**E19 的增益完全是 source-aware 加權的功勞**。這指出一個乾淨的下一發：
+
+### E22（下一發，尚未成功跑出結果）
+```bash
+python train_v2.py --lex_mode l1 --source_aware --run_name e22_l1_source_aware \
+    --epochs 4 --batch_size 32 --lr 2e-5
+```
+拿掉 31 維強度特徵，只留 10 維原始 L1 + source-aware 加權。假說：這樣既能保留 E19 的 arousal 增益，
+又能減少 E19 造成的 valence 退化（V_MAE 0.600→0.666）——因為強度特徵被懷疑是拖累 valence 的來源之一
+（未證實，是本次假說，跑出來才知道）。
+
+**現況：本機（M2 Air `mps`）跑了三次都失敗，尚未產出任何結果。**
+- 第 1、2 次：訓練用 `nohup` 背景啟動，但 Claude Code session 中途重啟（非使用者主動終止），
+  process 被一併殺掉，`outputs/e22_train.log` 只停在 HF 模型載入階段（`BertModel LOAD REPORT`），
+  連第一個 training step 都沒開始印。
+- 第 3 次：process 存活了較久，但**診斷出是真的卡住、不是在慢慢跑**——用 `ps -o etime,time` 查：
+  跑了 **5 小時 19 分鐘 wall time，只累積 9 分 58 秒 CPU time**，卡在第一個 batch 的 forward/backward。
+  判斷：**M2 Air 的 `mps` backend 跑 batch_size=32 / max_len=256 這個設定會 hang**（之前的小 smoke test
+  用的是 batch 8 / max_len 64，撐得住；正式設定沒試過）。使用者發現後下令 `幫我停掉`，已用 `kill` 清乾淨
+  （`ps aux | grep train_v2.py` 確認為 0）。
+- **結論：本機 MPS 不適合跑這個設定的正式訓練，之後 E18–E21 之後的新實驗都應該直接上 Colab（A100），
+  別再嘗試本機 batch 32 訓練。**（本機只適合先前用過的小 batch smoke test，驗證程式碼邏輯用。）
+- **`Rocling2026_Colab_e18_e21.ipynb` 已加了 cell 18（未 commit）**：內容就是上面那行 e22 指令，
+  可以直接在 Colab 上執行；跑完記得執行打包 cell（cell 10/12）把 submission 拉回或 push 回 branch。
+
+---
+
 ## 4. 交付物與檔案
 
 ### git 追蹤（`baseline/` 是獨立 git repo，root = `/Users/brian/Rocling2026/baseline`）
@@ -167,15 +227,33 @@ E18/E20/E21/robertaL 官方確認淘汰。**E18 官方分數揭露：E19 的增�
 
 ### 本 session 新增（在 branch `feat/ensemble-teacher-student-experiments`，未合回 main）
 - 程式：`train_v2.py`、`ensemble.py`、`build_pseudo_labels.py`、`embed_regressor.py`、`lexicon_l2.py`、`calibrate.py`、`fetch_results.py`
-- 規劃/交接：`future_experiments.md`（E10–E17）、`session_handover.md`
+- **E18–E21 新增**：`lexicon_intensity.py`（L1++ 31 維）、`build_silver_pairs.py` / `eval_silver_ranking.py`
+  （silver ranking benchmark，見 §3.6）、`Rocling2026_Colab_e18_e21.ipynb`
+- 規劃/交接：`future_experiments.md`（E10–E17）、`session_handover.md`、`dsa_nift_next_experiments_plan.md`（E18–E27 規劃）
 - notebook：`Rocling2026_Colab_ensemble.ipynb`、`Rocling2026_Colab_e13.ipynb`
-- 資料：`data/train_aug_pseudo.csv`（318 篇偽標，**已 `git add -f` 進 branch**，供 Colab clone）
+- 資料：`data/train_aug_pseudo.csv`（318 篇偽標，**已 `git add -f` 進 branch**，供 Colab clone）、
+  `data/silver_pairs_claude-opus-4-8.csv`（silver ranking 500 pairs 標註，已 commit）
 - `.gitignore` 新增 `*.zip`、`data/train_aug_pseudo.csv`（後者靠 `-f` 強制追蹤）
 
 ### **未追蹤（gitignore）**——交接時要注意
 - `data/train_aug.csv`（400 篇增強，**本機生成、不在 git**）、`data/train_base.csv`
-- `outputs/`（含 `l2_word_va.pkl` 814MB、`l3_graph.pkl`、**7 顆 teacher 權重 `*_best.pt`**、各 `*_submission.csv`）、`*.pt`、`*.zip`、`.venv/`
-- 本機 `outputs/` 已備妥全部權重（E10–E13），E13 偽標/後續實驗不用重訓 teacher。
+- `outputs/`（含 `l2_word_va.pkl` 814MB、`l3_graph.pkl`、**7+ 顆 teacher/實驗權重 `*_best.pt`**、各 `*_submission.csv`、
+  `e22_train.log` 本機失敗訓練的殘留 log）、`*.pt`、`*.zip`、`.venv/`
+- 本機 `outputs/` 已備妥全部權重（E10–E13、E18–E21），**沒有 e22 的權重**（三次本機訓練皆未完成，見 §3.6）。
+
+### ⚠️ 目前工作目錄狀態（2026-07-21，交接時待處理）
+- **`git status` 顯示 3 個 notebook dirty 但未 commit**：`Rocling2026_Colab_e13.ipynb`（+312/-0 行）、
+  `Rocling2026_Colab_e18_e21.ipynb`（+674/-92，含未 commit 的 e22 cell 18）、
+  `Rocling2026_Colab_ensemble.ipynb`（+787/-66，**且仍嵌著未撤銷的 GitHub token**，見 §6）。
+  這些多半是 Colab/VS Code 執行後同步回來的 cell outputs，commit 前建議先看過 diff、
+  尤其 ensemble 版**千萬別把 token 一起 commit 上去**。
+- **未追蹤且來源不明**：`CLAUDE.md`、`docs/agents/{domain,issue-tracker,triage-labels}.md`——
+  內容與本專案無關（像是別的 agent skill 樣板），先跟使用者確認再處理。
+- **上層目錄 `../` 有多個 submission zip**（`submission_e18_l1_intensity.csv.zip`、`submission_e19.csv.zip`、
+  `submission_e20_rank_aug.csv.zip`、`submission.csv.zip`、`submission_v0/v1/v2/v3.csv.zip`）——
+  e18/e19/e20/e21b/robertaL 的官方分數都已經拿到並記錄，這些 zip 多半已完成任務；
+  `v0`–`v3` 命名不符合目前慣例（`submission_{run}.csv.zip`），來源不明，可能是更早的手動打包，
+  清理前先確認不是還沒上傳的東西。
 
 ### zip 打包（給 Colab）
 ```bash
@@ -225,23 +303,55 @@ zip -gq baseline_aug.zip data/train_aug.csv Rocling2026_Colab_aug.ipynb experime
 - **git push 常被擋**（你從 Colab VM push 過 submission）：本地 push 前先 `git fetch` → rebase；
   遠端 commit 常加 `outputs/*.csv`（tracked），與本機同名未追蹤檔衝突時，先 `rm` 那些未追蹤 csv（保留 `.pt`/`.pkl`）再 rebase。
 - **偽標的 `--blend`/離群移除是本機生成**：teacher 權重只在本機，別上傳 3.5GB 到 Colab；偽標產出小檔再帶上去。
+- **本機 `mps` 訓練會在正式 batch size 下 hang，且不易發現**：M2 Air 用 `--batch_size 32 --max_len 256`
+  跑 `train_v2.py` 時，process 存活但卡在第一個 training step 不動——`ps aux` 看得到 process、
+  但 `outputs/{run}_train.log` 永遠停在 HF `BertModel LOAD REPORT` 之後，不會印出 `[epoch 1] step50/...`。
+  **判斷方法**：`ps -o etime,time -p <pid>` 比對 wall time 與 CPU time，如果 wall time 遠大於 CPU time
+  （例：跑了 5 小時只累積 10 分鐘 CPU），代表卡住而非慢跑，直接 `kill` 別等。
+  **教訓：本機只拿來跑小 batch（如 8）+ 短 max_len（如 64）的 smoke test 驗證程式碼，
+  正式訓練（batch 32 對照組）一律上 Colab A100，不要在本機嘗試。**
+- **Claude Code session 中斷會殺掉背景訓練**：用 `run_in_background: true` 啟動的訓練，若 session 重啟
+  （非使用者主動關閉），process 會被一併終止、且不留下錯誤訊息，只會在下次啟動時看到
+  「No completion record was found」。若需要長跑訓練撐過可能的 session 中斷，
+  改在使用者自己的終端機（不透過 Claude Code）用 `nohup ... &` 啟動，與 Claude Code 脫鉤。
+- **⚠️ 安全**：`Rocling2026_Colab_ensemble.ipynb`（未 commit 的工作目錄版本）**目前仍嵌著一個 GitHub token**
+  （`ghp_qljV...`，cell 2）。已提醒過使用者去 GitHub 撤銷重發，**尚未確認是否已撤銷**。
+  這個檔案目前是 dirty（未 commit），千萬別把它原樣 commit 上去；新版 notebook
+  （`Rocling2026_Colab_e18_e21.ipynb`）已改用 `getpass` 輸入 token，沒有這個問題。
+- **未追蹤的 `CLAUDE.md` / `docs/agents/*.md`（issue-tracker、triage-labels、domain）來源不明**：
+  這些檔案內容看起來像某個通用 agent skill 的樣板（issue tracker、triage 標籤、domain doc 佈局），
+  與 DSA-NIFT 情感分析任務本身無關，也不在 git 歷史裡。**不確定是誰、何時建立的**——
+  交接時看到不要假設它們是這個專案需要的東西，先跟使用者確認再決定保留或刪除。
 
 ---
 
-## 7. 下一步（優先序）
+## 7. 下一步（優先序，2026-07-21 更新）
 
-專攻 **Arousal PCC**（唯一瓶頸）。**本 session 已排除 ensemble（死路）與純 teacher 偽標（失 PCC）**。
+專攻 **Arousal PCC 同時不犧牲 Valence**（E19 已破 arousal 瓶頸，但 valence 退化）。
+**已排除**：ensemble（死路）、純 teacher 偽標（失 PCC）、E18 單獨強度特徵（拖累）、E20 ranking-only、
+E21 dim-attention、roberta-large 單顆（皆四指標輸實驗 4）。
 
-1. **🏆 首選：Enhanced L1（精進實驗 4 架構本身，尚未實作）**——在 `lexicon.py` 加 arousal **強度表面特徵**
-   （驚嘆/問號密度、程度副詞 超/非常/完全、身體反應詞 發抖/心跳/喘不過氣、字元/詞重複、句長節奏），
-   原 10 維 → ~16–18 維，`train_v2.py --lex_mode l1_intensity` 切換（不覆蓋原檔）。
-   **理由**：不動資料分布 → 繞開 E13 的「校準↔排序」trade-off，只加分不傷 valence/MAE，直攻 arousal 本質（intensity）。
-   驗證：本機看特徵合理 → Colab **嚴格 batch 32** 對照實驗 4。
-2. **平行（為論文非為分數）：E13 blend 變體**——`build_pseudo_labels.py --blend 0.3/0.5` 生成
+1. **🏆 立即待辦：E22（`--lex_mode l1 --source_aware`，10 維 L1 + 來源加權，拿掉強度特徵）——三次本機嘗試皆失敗，
+   尚未有結果，需上 Colab 跑**：
+   ```bash
+   python train_v2.py --lex_mode l1 --source_aware --run_name e22_l1_source_aware \
+       --epochs 4 --batch_size 32 --lr 2e-5
+   ```
+   `Rocling2026_Colab_e18_e21.ipynb` cell 18 已有這行（未 commit），直接在 Colab A100 執行即可
+   （**別在本機 M2 跑，`mps` 在這個 batch size 下會 hang**，見 §6 環境雷點）。
+   跑完 `fetch_results.py --zip <下載的 zip>` 解壓、`--pack e22_l1_source_aware` 打包提交。
+2. **若 E22 修好 valence（同時保留 arousal 增益）→ 新王，優先解耦 E19 的 valence 退化**：
+   (a) `--source_weights` 讓 CVAS/CVAT 的 V 權重 >1 補償；(b) V/A 分開 early-stop；
+   (c) `calibrate.py`（E26）只後校準 E19 的 V_MAE，不動排序。
+3. **Silver ranking 補第二個 judge**（`build_silver_pairs.py --provider openai`，同一批 500 pairs，同 seed）→
+   `eval_silver_ranking.py` 用雙 judge 一致性過濾，看能否修正上一輪「押錯 e19 排名」的問題；
+   即使修正了也只當否決過濾器用，不取代官方分數。
+4. **平行（為論文非為分數）：E13 blend 變體**——`build_pseudo_labels.py --blend 0.3/0.5` 生成
    bin(排序)×teacher(校準) 中間點，測 trade-off 曲線；或「高喚醒 bin 用 teacher、低喚醒 bin 用 moderate 標籤」分端策略。
-3. **論文必做消融**：L3 引導 vs 隨機種子（證明知識圖譜）、`--no_lexicon`/L1/L1+強度、raw/teacher/blend 標籤。
-4. 已備未跑：E14（`embed_regressor.py` frozen emb+SVR）、E16（`lexicon_l2.py` L1+L2）、E17（`calibrate.py` 只修 MAE）。
-5. `train_v2.py` 已支援 `--mae_weight`/`--pcc_weight`/`--arousal_weight`，要讓 early-stop 或 loss 更偏排序可直接調。
+5. **論文必做消融**：L3 引導 vs 隨機種子（證明知識圖譜）、`--no_lexicon`/L1/L1+強度/L1+source_aware 對照表
+   （E4/E18/E19/E22 剛好是這張表的四個格子）、raw/teacher/blend 標籤曲線。
+6. 已備未跑：E14（`embed_regressor.py` frozen emb+SVR）、E16（`lexicon_l2.py` L1+L2）、E17（`calibrate.py` 只修 MAE）。
+7. `train_v2.py` 已支援 `--mae_weight`/`--pcc_weight`/`--arousal_weight`，要讓 early-stop 或 loss 更偏排序可直接調。
 
 ---
 
