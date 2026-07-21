@@ -27,11 +27,73 @@ import pickle
 import random
 import argparse
 
-from affective_graph import build_graph, seeds_for_target
+from affective_graph import (build_graph, seeds_for_target, seeds_random,
+                             seeds_by_expansion, seed_coherence)
 
 HERE = os.path.dirname(__file__)
 OUT = os.path.join(HERE, "outputs")
 DATA = os.path.join(HERE, "data")
+
+
+def load_dotenv(path=None):
+    """從 .env 讀 API key（不覆蓋已存在的環境變數）。預設找專案上層的 .env。"""
+    path = path or os.path.join(HERE, "..", ".env")
+    if not os.path.exists(path):
+        return
+    with open(path, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            k, v = line.split("=", 1)
+            os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
+
+
+# ---------------------------------------------------------------------------
+# 風格錨定（style anchoring）：用官方【無標籤】文本當生成的語域範例。
+# 動機：實驗 5b 診斷出 A_MAE 的傷害來自合成文本的語域/風格偏移，而非標籤。
+# ⚠️ 只使用官方公開的「文本」，不使用任何標籤（官方也未釋出標籤）。論文須明確聲明。
+# ---------------------------------------------------------------------------
+
+def load_unlabeled_texts(paths):
+    """讀官方無標籤 csv（ID,Text 或 id,text），回傳 list[str]。"""
+    texts = []
+    for p in paths:
+        if not os.path.exists(p):
+            print(f"  ⚠ 找不到 {p}，略過")
+            continue
+        with open(p, encoding="utf-8-sig") as f:
+            for r in csv.DictReader(f):
+                low = {(k or "").strip().lower(): v for k, v in r.items()}
+                t = (low.get("text") or "").strip()
+                if t:
+                    texts.append(t)
+    return texts
+
+
+def retrieve_style_examples(texts, seed_words, k=4, rng=None, mode="lexical"):
+    """依種子詞從無標籤文本中檢索風格範例。
+
+    mode="lexical"：計算每篇文本命中幾個種子詞，取最高分的 k 篇（同分隨機打散）。
+                    這讓「情緒區間」與「風格範例」對齊——圖譜選出的情緒詞，
+                    帶出的是目標域中真的在談那種情緒的段落。
+    mode="random"： 純隨機抽 k 篇（消融用：檢驗「檢索」是否比「隨便給範例」好）。
+    """
+    rng = rng or random.Random(0)
+    if not texts:
+        return []
+    if mode == "random" or not seed_words:
+        return rng.sample(texts, min(k, len(texts)))
+    scored = []
+    for t in texts:
+        hits = sum(1 for w in seed_words if w in t)
+        scored.append((hits, rng.random(), t))
+    scored.sort(key=lambda x: (-x[0], x[1]))
+    top = [t for h, _, t in scored[:k] if h > 0]
+    if len(top) < k:  # 命中不足時用隨機補滿，避免 prompt 沒有風格範例
+        pool = [t for _, _, t in scored[k:]]
+        top += rng.sample(pool, min(k - len(top), len(pool)))
+    return top
 # 各 provider 的預設模型（可用 --model 覆寫）
 DEFAULT_MODELS = {"anthropic": "claude-opus-4-8", "openai": "gpt-4o"}
 
@@ -57,18 +119,69 @@ def load_graph():
     return G
 
 
-def build_prompt(seed_words, desc, n):
+def build_prompt(seed_words, desc, n, style_examples=None):
+    """組生成 prompt。
+
+    ⚠️ 相容性：不給 style_examples 且 seed_words 非空時，輸出與實驗 5 的原始 prompt
+    【逐字相同】，確保條件 C 可復現。新增的區塊只在對應旗標開啟時才出現。
+    """
     seeds = "、".join(seed_words) if seed_words else "（圖上無此區間種子詞，請自行掌握情緒強度）"
+    style_block = ""
+    if style_examples:
+        ex = "\n".join(f"  - {t}" for t in style_examples)
+        style_block = (
+            f"【風格範例】以下是真實的新住民文本，請模仿它們的口吻、句長與用詞習慣，"
+            f"但**內容必須完全不同、不可改寫或照抄**：\n{ex}\n"
+        )
     return (
         f"你要協助建立中文情緒分析訓練資料。請以「新住民（嫁來/移居台灣的外籍配偶或移工）」的第一人稱，"
         f"寫 {n} 段彼此獨立、內容各異的生活反思短文。\n\n"
         f"【情緒要求】每段都要明確傳達：{desc}。情緒強度要到位、可從文字明顯感受到。\n"
         f"【可用情緒詞】可自然帶入這些詞當情緒參考（不必全用、不要硬塞；"
         f"凡與新住民日常語境不符、過於暴力或粗俗的詞請直接忽略）：{seeds}\n"
+        f"{style_block}"
         f"【內容要求】題材多元：工作、家庭、語言、孩子教育、思鄉、人際、就醫、證件/身分、節慶等都可；"
         f"每段 50–120 字；用第一人稱「我」；像真人日記/自述，不要像新聞或教科書；不要編號、不要標題。\n"
         f"只回傳這 {n} 段短文。"
     )
+
+
+def build_prompt_no_seeds(desc, n, style_examples=None):
+    """條件 N：完全不給種子詞（連【可用情緒詞】區塊都拿掉），只給情緒描述。
+
+    對照組的意義：如果 N 與 C 打平，代表 LLM 光看情緒描述就能寫出對的 arousal，
+    整個詞典/圖譜的種子詞機制都是多餘的——這是最基本、也最該先排除的可能。
+    """
+    style_block = ""
+    if style_examples:
+        ex = "\n".join(f"  - {t}" for t in style_examples)
+        style_block = (
+            f"【風格範例】以下是真實的新住民文本，請模仿它們的口吻、句長與用詞習慣，"
+            f"但**內容必須完全不同、不可改寫或照抄**：\n{ex}\n"
+        )
+    return (
+        f"你要協助建立中文情緒分析訓練資料。請以「新住民（嫁來/移居台灣的外籍配偶或移工）」的第一人稱，"
+        f"寫 {n} 段彼此獨立、內容各異的生活反思短文。\n\n"
+        f"【情緒要求】每段都要明確傳達：{desc}。情緒強度要到位、可從文字明顯感受到。\n"
+        f"{style_block}"
+        f"【內容要求】題材多元：工作、家庭、語言、孩子教育、思鄉、人際、就醫、證件/身分、節慶等都可；"
+        f"每段 50–120 字；用第一人稱「我」；像真人日記/自述，不要像新聞或教科書；不要編號、不要標題。\n"
+        f"只回傳這 {n} 段短文。"
+    )
+
+
+def pick_seeds(G, mode, vr, ar, n, rng, n_anchors=4, hops=2):
+    """依消融條件選種子詞。回傳 [(word, v, a)]。"""
+    if mode == "none":
+        return []
+    if mode == "random":
+        return seeds_random(G, n=n, rng=rng)
+    if mode == "lookup":                      # 實驗 5 原始行為（凍結）
+        return seeds_for_target(G, v_range=vr, a_range=ar, n=n)
+    if mode == "graph":
+        return seeds_by_expansion(G, v_range=vr, a_range=ar, n=n, rng=rng,
+                                  n_anchors=n_anchors, hops=hops)
+    raise ValueError(f"未知 seed_mode: {mode}")
 
 
 def make_client(provider):
@@ -82,9 +195,13 @@ def make_client(provider):
     raise ValueError(f"未知 provider: {provider}")
 
 
-def generate_bin(provider, client, model, ParsedModel, seed_words, desc, n):
+def generate_bin(provider, client, model, ParsedModel, seed_words, desc, n,
+                 style_examples=None, seed_mode="lookup"):
     """呼叫 LLM 生成 n 段短文，回傳 list[str]。兩家都用 structured output 拿乾淨陣列。"""
-    prompt = build_prompt(seed_words, desc, n)
+    if seed_mode == "none":
+        prompt = build_prompt_no_seeds(desc, n, style_examples)
+    else:
+        prompt = build_prompt(seed_words, desc, n, style_examples)
     if provider == "anthropic":
         resp = client.messages.parse(
             model=model, max_tokens=8000,
@@ -134,11 +251,32 @@ def main():
     ap.add_argument("--out", default=os.path.join(DATA, "train_aug.csv"))
     ap.add_argument("--append", action="store_true", help="生成後併進 data/train.csv（先備份 train_base.csv）")
     ap.add_argument("--dry_run", action="store_true", help="不呼叫 API，只印種子詞與 prompt")
+    # ---- 消融旋鈕（見 docs/paper/kg_experiment_plan.md）----
+    ap.add_argument("--seed_mode", choices=["none", "random", "lookup", "graph"], default="lookup",
+                    help="種子詞策略：none=條件N（不給詞）/ random=條件A / "
+                         "lookup=條件C（實驗5原始行為，預設）/ graph=條件E（圖擴散 G1+G3）")
+    ap.add_argument("--style_anchor", action="append", default=[],
+                    help="風格錨定用的官方無標籤 csv（可重複指定；如 ../DSANIDF_TestSet.csv）")
+    ap.add_argument("--n_style", type=int, default=4, help="每次呼叫附幾篇風格範例")
+    ap.add_argument("--style_mode", choices=["lexical", "random"], default="lexical",
+                    help="風格範例檢索方式：lexical=依種子詞命中檢索 / random=隨機抽（消融）")
+    ap.add_argument("--n_anchors", type=int, default=4, help="graph 模式：每次抽幾個 anchor")
+    ap.add_argument("--hops", type=int, default=2, help="graph 模式：沿邊擴散幾跳")
     args = ap.parse_args()
+    load_dotenv()
     random.seed(args.seed)
+    rng = random.Random(args.seed)
     model = args.model or DEFAULT_MODELS[args.provider]
 
     G = load_graph()
+
+    style_texts = []
+    if args.style_anchor:
+        style_texts = load_unlabeled_texts(args.style_anchor)
+        print(f"風格錨定：載入 {len(style_texts)} 篇官方無標籤文本"
+              f"（僅用文本，未使用任何標籤）")
+    print(f"seed_mode={args.seed_mode}  style_anchor={'ON' if style_texts else 'OFF'}"
+          f"  style_mode={args.style_mode}")
 
     client = ParsedModel = None
     if not args.dry_run:
@@ -155,20 +293,36 @@ def main():
     accepted = []   # 跨所有 bin 的已接受文本詞集，連跨區間重複也擋
     dropped_total = 0
     for i, (vc, ac, vr, ar, desc) in enumerate(TARGET_BINS):
-        seeds = seeds_for_target(G, v_range=vr, a_range=ar, n=args.seeds_per_bin)
+        seeds = pick_seeds(G, args.seed_mode, vr, ar, args.seeds_per_bin, rng,
+                           args.n_anchors, args.hops)
         seed_words = [w for w, _, _ in seeds]
         print(f"\n[bin {i+1}/{len(TARGET_BINS)}] V≈{vc} A≈{ac}  {desc}")
-        print(f"  種子詞({len(seed_words)}): {'、'.join(seed_words) or '（無）'}")
+        print(f"  種子詞({len(seed_words)}): {'、'.join(seed_words) or '（無 — 條件 N）'}")
+        if seed_words:
+            print(f"  語意連貫度 (圖上相連詞對比例): {seed_coherence(G, seed_words):.3f}")
 
         if args.dry_run:
+            ex = retrieve_style_examples(style_texts, seed_words, args.n_style, rng,
+                                         args.style_mode) if style_texts else []
             print("  --- prompt 預覽 ---")
-            print("  " + build_prompt(seed_words, desc, min(args.chunk, args.per_bin)).replace("\n", "\n  "))
+            p = (build_prompt_no_seeds(desc, min(args.chunk, args.per_bin), ex)
+                 if args.seed_mode == "none"
+                 else build_prompt(seed_words, desc, min(args.chunk, args.per_bin), ex))
+            print("  " + p.replace("\n", "\n  "))
             continue
 
         texts, calls = [], 0
         while len(texts) < args.per_bin and calls < args.max_calls_per_bin:
             need = min(args.chunk, args.per_bin - len(texts))
-            got = generate_bin(args.provider, client, model, ParsedModel, seed_words, desc, need)
+            # G3：每次呼叫都重抽 anchor → 種子詞不同 → 解決 80 篇共用一組詞的問題
+            if args.seed_mode == "graph" and calls > 0:
+                seeds = pick_seeds(G, args.seed_mode, vr, ar, args.seeds_per_bin, rng,
+                                   args.n_anchors, args.hops)
+                seed_words = [w for w, _, _ in seeds]
+            ex = retrieve_style_examples(style_texts, seed_words, args.n_style, rng,
+                                         args.style_mode) if style_texts else []
+            got = generate_bin(args.provider, client, model, ParsedModel, seed_words, desc, need,
+                               style_examples=ex, seed_mode=args.seed_mode)
             calls += 1
             if not got:
                 print("  ⚠ 這批回傳 0 篇，跳出避免無限迴圈"); break
