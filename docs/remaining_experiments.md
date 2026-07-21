@@ -15,14 +15,31 @@
 
 ## 🔴 P0 — 必做。零訓練成本，直接支撐論文核心 claim
 
-### P0-1. 補一支 `predict.py`（推論專用）
-目前 `train_v2.py` 沒有 inference-only 路徑，而**我們沒有留下任何 test set 的預測檔**
-（最終提交是在 Colab 上跑完直接上傳的）。但 `outputs/e19_source_aware_best.pt` 還在本機。
+### ✅ P0-1. `predict.py`（推論專用）— **已完成**
+`train_v2.py` 原本沒有 inference-only 路徑，且**我們沒有留下任何 test set 的預測檔**
+（最終提交是在 Colab 上跑完直接上傳的）。已補上 `predict.py`：
+```bash
+python predict.py --ckpt outputs/e19_source_aware_best.pt --lex_mode l1_intensity \
+    --input ../DSANIDF_TestSet.csv --run_name e19_source_aware --split test
+```
+已對 E19 跑完 → `outputs/preds/e19_source_aware_test.csv`。
 
-需求：吃 `--ckpt` + `--input <csv>` + `--lex_mode` → 輸出 `outputs/preds/{run}_test.csv`。
-**這是 P0-2 / P0-3 的前置。**
+### ✅ P0-3. n=200 的 PCC 抽樣誤差 — **已完成，結果強力支撐論文**
+`analyze_variance.py` 在 dev（253 篇，有 gold）上 bootstrap 抽 n=200 × 5,000 次：
 
-### P0-2. 用全部 13 顆 checkpoint 對 `DSANIDF_TestSet.csv` 重跑推論
+| | 95% CI 寬度 | |
+|---|---|---|
+| V_PCC | 0.083 | |
+| **A_PCC** | **0.193** | ← arousal 的評估不確定性是 valence 的 **2.31 倍** |
+
+- 我們選 E19 而非 E4 的依據（A_PCC 差 0.026）**比噪聲寬度小 7.4 倍**。
+- seed 變異只有 A_PCC std 0.0055 → **問題不是訓練隨機性，是評估集太小**。
+- E19 在 test 的預測分布與 val 幾乎相同（arousal std 0.730 vs 0.729）→ **排除模型漂移**。
+- ⚠️ 但書：bootstrap 是在 dev 上做的代理估計（官方集合無 gold），論文必須誠實標註。
+
+**⇒ 論文 claim C3 已從 ⚠️partial 升級為 ✅supported。**
+
+### 🔲 P0-2. 用全部 13 顆 checkpoint 對 `DSANIDF_TestSet.csv` 重跑推論
 ```bash
 for ck in e19_source_aware e18_l1_intensity macbert_s42 macbert_s1 ... ; do
     python predict.py --ckpt outputs/${ck}_best.pt --input ../DSANIDF_TestSet.csv --run_name $ck
@@ -36,18 +53,7 @@ done
 > 已知本機 val 預測分布：arousal std 落在 0.67–0.83，valence std 1.23–1.60。
 > 對照 test 的同一組數字是論文 Analysis 節的關鍵圖表。
 
-### P0-3. 量化「n=200 上 A_PCC 的抽樣誤差」——**這是最重要的一個實驗**
-支撐論文最強的 claim（selection overfitting）。純統計，幾分鐘跑完：
-
-1. 在內部 dev（253 篇，有 gold）上，對每個 run **bootstrap 抽 200 篇** × 2,000 次，
-   算 A_PCC 與 V_PCC 的分布 → 得到 **n=200 時的 95% 信賴區間寬度**。
-2. 假說：**A_PCC 的 CI 寬度會遠大於 V_PCC**，且寬到足以涵蓋 E4（0.426）與 E19（0.452）的差距。
-3. 若成立，就能直接寫：「我們在 validation 上觀察到的 arousal 排名差異在統計上不可區分，
-   test 結果（0.452 → 0.357）正是這個效應的實現。」
-
-同時算：5 顆 seed（macbert_s42/s1/s2/s3/s4）在 dev 上的 A_PCC **seed 變異**（已知落在 0.604–0.616）。
-
-### P0-4. 整理 dev 全表
+### 🔲 P0-4. 整理 dev 全表
 把 `outputs/preds/*_dev.csv` 全部算成 4 指標表，與官方 val 表並排 →
 量化「dev 排名與 official 排名的 Spearman 相關」。
 若相關性很低，就是「代理驗證集不可靠」這個主張的直接證據，同時解釋了為何 silver ranking 也失敗。
@@ -128,13 +134,14 @@ python eval_silver_ranking.py                    # 雙 judge 一致性過濾
 ## 建議執行順序（以 8/10 截止回推）
 
 ```
-第 1 天   P0-1 predict.py → P0-2 test 推論 → P0-3 bootstrap CI → P0-4 dev 全表
-          （全部本機可跑，零 GPU 成本，直接產出論文 Analysis 節的所有數字）
-第 2–3 天 P1-1 上 Colab 跑 12 個 run（3 小時）→ P1-2 推論 → 產出 ablation 表
-第 4 天起 開始寫論文（骨架見 docs/paper/outline.md）
-有餘力    P2-1 L3 消融 / P2-2 第二個 judge
+✅ 已完成  P0-1 predict.py、P0-3 bootstrap CI（核心 claim 已有證據）
+第 1 天    P0-2 剩餘 checkpoint 的 test 推論 → P0-4 dev 全表
+第 2–3 天  P1-1 上 Colab 跑 12 個 run（約 3 小時）→ P1-2 推論 → 產出 ablation 表
+第 4 天起  開始寫論文（骨架見 docs/paper/outline.md）
+有餘力     P2-1 L3 消融 / P2-2 第二個 judge
 ```
 
-**最低限度**：只做完 P0（一天），論文就已經有完整的結果表 + 一個誠實有力的
-selection-overfitting 分析。P1 讓 ablation 從「單次跑分」升級成「有誤差棒的結論」，
-是審稿人最可能質疑的地方，強烈建議補。
+**現況**：P0-3 已經把論文最強的 claim（C3 selection overfitting）從「只有現象」
+變成「有量化證據」。剩下最有價值的是 **P1-1 多 seed ablation**——
+它決定了「source-aware loss 有效」這個宣稱能不能留在論文裡。
+若不跑，方法節只能寫 "we adopted"，不能寫 "improves"。
