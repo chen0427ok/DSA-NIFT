@@ -170,6 +170,18 @@ def build_prompt_no_seeds(desc, n, style_examples=None):
     )
 
 
+CSV_FIELDS = ["id", "granularity", "text", "valence", "arousal"]
+
+
+def _write_rows(path, rows):
+    """把目前累積的 rows 寫出（逐 bin 落檔用，覆寫式）。"""
+    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+    with open(path, "w", encoding="utf-8", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=CSV_FIELDS)
+        w.writeheader()
+        w.writerows(rows)
+
+
 def pick_seeds(G, mode, vr, ar, n, rng, n_anchors=4, hops=2):
     """依消融條件選種子詞。回傳 [(word, v, a)]。"""
     if mode == "none":
@@ -195,6 +207,25 @@ def make_client(provider):
     raise ValueError(f"未知 provider: {provider}")
 
 
+def _with_retry(fn, tries=9, base=4.0, label=""):
+    """指數退避重試。API 529 Overloaded / 429 rate limit / 連線錯誤都是暫時性的，
+    不重試的話一次抖動就會讓整批數百篇生成全部作廢（實測發生過）。"""
+    import time
+    for i in range(tries):
+        try:
+            return fn()
+        except Exception as e:
+            name = type(e).__name__
+            transient = any(s in name for s in ("Overloaded", "RateLimit", "APIConnection",
+                                                "InternalServer", "Timeout"))
+            if not transient or i == tries - 1:
+                raise
+            wait = base * (2 ** i) + random.uniform(0, 2)
+            print(f"  ⚠ {name}{(' ' + label) if label else ''}，{wait:.0f}s 後重試 "
+                  f"({i+1}/{tries-1})", flush=True)
+            time.sleep(wait)
+
+
 def generate_bin(provider, client, model, ParsedModel, seed_words, desc, n,
                  style_examples=None, seed_mode="lookup"):
     """呼叫 LLM 生成 n 段短文，回傳 list[str]。兩家都用 structured output 拿乾淨陣列。"""
@@ -203,18 +234,18 @@ def generate_bin(provider, client, model, ParsedModel, seed_words, desc, n,
     else:
         prompt = build_prompt(seed_words, desc, n, style_examples)
     if provider == "anthropic":
-        resp = client.messages.parse(
+        resp = _with_retry(lambda: client.messages.parse(
             model=model, max_tokens=8000,
             messages=[{"role": "user", "content": prompt}],
             output_format=ParsedModel,
-        )
+        ))
         texts = resp.parsed_output.texts
     else:  # openai
-        resp = client.beta.chat.completions.parse(
+        resp = _with_retry(lambda: client.beta.chat.completions.parse(
             model=model,
             messages=[{"role": "user", "content": prompt}],
             response_format=ParsedModel,
-        )
+        ))
         texts = resp.choices[0].message.parsed.texts
     return [t.strip() for t in texts if t and t.strip()]
 
@@ -342,6 +373,10 @@ def main():
             a = round(min(9.0, max(1.0, ac + random.uniform(-args.jitter, args.jitter))), 2)
             rows.append({"id": f"AUG_{len(rows)+1:04d}", "granularity": "augment",
                          "text": t, "valence": v, "arousal": a})
+
+        # 每個 bin 結束就先落檔：API 在最後一個 bin 掛掉時，不會賠掉前面幾百篇（實測發生過）
+        _write_rows(args.out, rows)
+        print(f"  ✓ 已存檔 {len(rows)} 篇 → {args.out}", flush=True)
 
     if args.dry_run:
         print(f"\n（dry_run）共 {len(TARGET_BINS)} 個 VA 區間，未呼叫 API、未輸出檔案。")
