@@ -1,19 +1,78 @@
 # 待跑實驗清單（論文導向）
 
-> **前提已經改變。** Shared task 評測已結束，且官方 **validation 與 test 都沒有釋出 gold 標籤**。
-> 這代表：**任何新模型都無法再取得官方分數**。
-> 因此以下實驗的排序依據不再是「能不能拿分」，而是**「對論文的證據強度貢獻多少」**。
+> **✅ 2026-07-21 更新：評分網站仍可提交 test set，所以我們拿得到官方 test 分數。**
+> 這徹底改變了規劃——不再只能靠 dev 代理，而是可以在 **n=1,100** 上做真正的對照實驗。
 >
-> 可用的評估管道只剩三條：
-> 1. **內部 dev**（DSA-MST 253 篇，有標籤）— 唯一能算真實 MAE/PCC 的集合
-> 2. **Silver ranking**（LLM pairwise，官方 200 篇）— 只能當否決過濾器
-> 3. **預測分布統計**（官方 200 + 1,100 篇，無標籤）— 可算 std / 模型間相關性 / 漂移
-
-投稿截止：**2026-08-10**。以下依「投入 vs 論文價值」排序。
+> **為什麼這件事很重要**：PCC 的評估變異隨 $\sqrt{n}$ 收斂。
+>
+> | 集合 | A_PCC 95% CI 寬度 | V_PCC 95% CI 寬度 |
+> |---|---|---|
+> | validation（n=200） | 0.222 | 0.069 |
+> | **test（n=1,100）** | **0.103** | **0.030** |
+>
+> test set 的量測精度是 validation 的 **2.2 倍**。原本在 val 上完全分不出來的差距
+> （E4 vs E19 的 0.026），在 test 上進入「差距 0.1 以上就能可靠判定」的範圍。
+> 官方 test 標籤仍未釋出，但**提交就能拿到分數**，等於有了一個高品質的裁判。
+>
+> 投稿截止：**2026-08-10**。
+>
+> ⚠️ **動手前先確認 test set 的提交次數上限**，再依下面的優先序分配額度。
 
 ---
 
-## 🔴 P0 — 必做。零訓練成本，直接支撐論文核心 claim
+## 🚨 P0-A — 最高優先：把「我們是不是選錯模型」在 test 上問清楚
+
+這是**整篇論文的樞紐**。目前我們只知道 E19 在 test 上 A_PCC 0.357，
+但**不知道 E4（valence 最佳的那顆）在 test 上是多少**。兩種結果導向兩種論文：
+
+| 若 test 上… | 論文怎麼寫 |
+|---|---|
+| **E4 的 A_PCC ≳ E19** | 「我們確實選錯了」——selection overfitting 的**直接證據**，論文最強版本 |
+| **E4 的 A_PCC ≈ E19（都 ~0.36）** | 「兩者本來就沒差」——val 上的 0.026 差距純屬噪聲，同樣支持核心論點 |
+| **E4 明顯低於 E19** | source-aware 是真的有效，只是 arousal 天花板低。論文改走「方法有效但評估變異大」 |
+
+**三種結果都能寫**，但不知道就沒得寫。所以這是第一順位。
+
+```bash
+# 已產生預測（E4 的 train_v2 復現版 = macbert_s42，10 維 L1）
+python predict.py --ckpt outputs/macbert_s42_best.pt --lex_mode l1 \
+    --input ../DSANIDF_TestSet.csv --run_name macbert_s42 --split test
+python fetch_results.py --pack macbert_s42_test      # 打包成 submission.csv.zip
+```
+
+> ⚠️ **誠實註記**：原始實驗 4 的 checkpoint（`train.py` 產的 `best_model.pt`）已不存在，
+> `macbert_s42` 是 `train_v2.py` 的復現版，**batch size 為 64 而非 32**（E10 在 A100 上跑的）。
+> dev 分數一致（A_PCC 0.615 vs 實驗 4 的 0.609），可視為同一設定，但論文要標明這點。
+
+### 接著值得花額度的 test 提交（依價值排序）
+1. **`macbert_s42`（≈E4）** ← 上面，必做
+2. **`e18_l1_intensity`** — 補完 `lex_mode × source_aware` 2×2 的第三格，
+   直接檢驗「31 維強度特徵有害」這個在 val 上得到的結論在 test 上還成不成立
+3. **`e10_seed_ens`** — 檢驗「ensemble 對 arousal 有害」是否為 val 專屬的假象
+4. **`macbert_pseudo_s42`（E13）** 或 **實驗 5 的增強版** — 驗證「校準↔排序 trade-off」
+5. **E22**（跑完後，見 P1-1）— 2×2 的最後一格
+
+全部 checkpoint 都在本機 `outputs/`，**推論不需要 GPU**，`predict.py` 在 M2 上跑 1,100 篇約數分鐘。
+
+### 已備妥、可直接上傳的 zip
+```
+outputs/macbert_s42_test.csv.zip        ← ≈實驗 4（10 維 L1）。最高優先
+outputs/e19_source_aware_test.csv.zip   ← E19 重跑版（見下方驗證用途）
+```
+
+### 💡 建議先花一次額度做「管線驗證」
+先提交 `e19_source_aware_test.csv.zip`（我們用 `predict.py` 從 checkpoint 重跑的版本）。
+- **若分數回傳 0.6200 / 0.8663 / 0.9259 / 0.3566**（與原提交完全一致）
+  → 證明 `predict.py` 的重跑管線與當初 Colab 上的推論等價，
+  **後續所有用同一管線產生的 test 提交都可信**。
+- 若不一致 → 代表重跑有問題（前處理、max_len、clip 等），必須先查清楚，
+  否則後面所有對照實驗的結論都建立在錯誤的基礎上。
+
+這一次額度買的是「後面所有實驗的可信度」，值得。
+
+---
+
+## 🔴 P0 — 本機分析（零成本，已大半完成）
 
 ### ✅ P0-1. `predict.py`（推論專用）— **已完成**
 `train_v2.py` 原本沒有 inference-only 路徑，且**我們沒有留下任何 test set 的預測檔**
