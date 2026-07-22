@@ -119,7 +119,18 @@ def load_graph():
     return G
 
 
-def build_prompt(seed_words, desc, n, style_examples=None):
+# 長度指令。fixed = 實驗 5 原始寫法（凍結，條件 C/E/F 用）。
+# match_real = 依 ValidationSet 實測分布（中位 64、5–95 百分位 43–142、最長 226）重寫，
+#   目的是解除「每段 50–120 字」把合成文本長度鎖死在 58–113 的問題（條件 F2）。
+LENGTH_FIXED = "每段 50–120 字"
+LENGTH_MATCH_REAL = (
+    "每段長度要明顯有長有短，不要每段都差不多長：大約六成落在 50–90 字，"
+    "約一成很短（20–45 字，像隨手記一句）、約一成偏長（120–200 字，寫得比較細）"
+)
+LENGTH_SPECS = {"fixed": LENGTH_FIXED, "match_real": LENGTH_MATCH_REAL}
+
+
+def build_prompt(seed_words, desc, n, style_examples=None, length_spec=LENGTH_FIXED):
     """組生成 prompt。
 
     ⚠️ 相容性：不給 style_examples 且 seed_words 非空時，輸出與實驗 5 的原始 prompt
@@ -141,12 +152,12 @@ def build_prompt(seed_words, desc, n, style_examples=None):
         f"凡與新住民日常語境不符、過於暴力或粗俗的詞請直接忽略）：{seeds}\n"
         f"{style_block}"
         f"【內容要求】題材多元：工作、家庭、語言、孩子教育、思鄉、人際、就醫、證件/身分、節慶等都可；"
-        f"每段 50–120 字；用第一人稱「我」；像真人日記/自述，不要像新聞或教科書；不要編號、不要標題。\n"
+        f"{length_spec}；用第一人稱「我」；像真人日記/自述，不要像新聞或教科書；不要編號、不要標題。\n"
         f"只回傳這 {n} 段短文。"
     )
 
 
-def build_prompt_no_seeds(desc, n, style_examples=None):
+def build_prompt_no_seeds(desc, n, style_examples=None, length_spec=LENGTH_FIXED):
     """條件 N：完全不給種子詞（連【可用情緒詞】區塊都拿掉），只給情緒描述。
 
     對照組的意義：如果 N 與 C 打平，代表 LLM 光看情緒描述就能寫出對的 arousal，
@@ -165,9 +176,11 @@ def build_prompt_no_seeds(desc, n, style_examples=None):
         f"【情緒要求】每段都要明確傳達：{desc}。情緒強度要到位、可從文字明顯感受到。\n"
         f"{style_block}"
         f"【內容要求】題材多元：工作、家庭、語言、孩子教育、思鄉、人際、就醫、證件/身分、節慶等都可；"
-        f"每段 50–120 字；用第一人稱「我」；像真人日記/自述，不要像新聞或教科書；不要編號、不要標題。\n"
+        f"{length_spec}；用第一人稱「我」；像真人日記/自述，不要像新聞或教科書；不要編號、不要標題。\n"
         f"只回傳這 {n} 段短文。"
     )
+
+
 
 
 CSV_FIELDS = ["id", "granularity", "text", "valence", "arousal"]
@@ -227,12 +240,12 @@ def _with_retry(fn, tries=9, base=4.0, label=""):
 
 
 def generate_bin(provider, client, model, ParsedModel, seed_words, desc, n,
-                 style_examples=None, seed_mode="lookup"):
+                 style_examples=None, seed_mode="lookup", length_spec=LENGTH_FIXED):
     """呼叫 LLM 生成 n 段短文，回傳 list[str]。兩家都用 structured output 拿乾淨陣列。"""
     if seed_mode == "none":
-        prompt = build_prompt_no_seeds(desc, n, style_examples)
+        prompt = build_prompt_no_seeds(desc, n, style_examples, length_spec)
     else:
-        prompt = build_prompt(seed_words, desc, n, style_examples)
+        prompt = build_prompt(seed_words, desc, n, style_examples, length_spec)
     if provider == "anthropic":
         resp = _with_retry(lambda: client.messages.parse(
             model=model, max_tokens=8000,
@@ -291,6 +304,9 @@ def main():
     ap.add_argument("--n_style", type=int, default=4, help="每次呼叫附幾篇風格範例")
     ap.add_argument("--style_mode", choices=["lexical", "random"], default="lexical",
                     help="風格範例檢索方式：lexical=依種子詞命中檢索 / random=隨機抽（消融）")
+    ap.add_argument("--length", choices=["fixed", "match_real"], default="fixed",
+                    help="長度指令：fixed=每段50-120字（實驗5原始，預設）/ "
+                         "match_real=依 ValidationSet 實測分布，明確要求長短不一（條件 F2）")
     ap.add_argument("--n_anchors", type=int, default=4, help="graph 模式：每次抽幾個 anchor")
     ap.add_argument("--hops", type=int, default=2, help="graph 模式：沿邊擴散幾跳")
     args = ap.parse_args()
@@ -298,6 +314,8 @@ def main():
     random.seed(args.seed)
     rng = random.Random(args.seed)
     model = args.model or DEFAULT_MODELS[args.provider]
+
+    length_spec = LENGTH_SPECS[args.length]
 
     G = load_graph()
 
@@ -336,9 +354,9 @@ def main():
             ex = retrieve_style_examples(style_texts, seed_words, args.n_style, rng,
                                          args.style_mode) if style_texts else []
             print("  --- prompt 預覽 ---")
-            p = (build_prompt_no_seeds(desc, min(args.chunk, args.per_bin), ex)
+            p = (build_prompt_no_seeds(desc, min(args.chunk, args.per_bin), ex, length_spec)
                  if args.seed_mode == "none"
-                 else build_prompt(seed_words, desc, min(args.chunk, args.per_bin), ex))
+                 else build_prompt(seed_words, desc, min(args.chunk, args.per_bin), ex, length_spec))
             print("  " + p.replace("\n", "\n  "))
             continue
 
@@ -353,7 +371,8 @@ def main():
             ex = retrieve_style_examples(style_texts, seed_words, args.n_style, rng,
                                          args.style_mode) if style_texts else []
             got = generate_bin(args.provider, client, model, ParsedModel, seed_words, desc, need,
-                               style_examples=ex, seed_mode=args.seed_mode)
+                               style_examples=ex, seed_mode=args.seed_mode,
+                               length_spec=length_spec)
             calls += 1
             if not got:
                 print("  ⚠ 這批回傳 0 篇，跳出避免無限迴圈"); break
