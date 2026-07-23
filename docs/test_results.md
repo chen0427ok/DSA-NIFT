@@ -21,6 +21,8 @@
 | e18_l1_intensity | 31維intensity（無sa） | 0.61 | 0.87 | 0.93 | 0.37 | 2×2 第三格 |
 | e19（predict.py 重跑） | 31維 + source-aware | 0.61 | 0.87 | 0.93 | 0.36 | **管線驗證**，見下 |
 | e20_rank_aug | ranking-only 增強 | 0.63 | 0.87 | 0.93 | 0.37 | val 上已淘汰 |
+| roberta_s42 | RoBERTa-wwm-ext base + 10維L1 | 0.62 | 0.86 | 0.92 | 0.38 | 換 encoder |
+| robertaL_s42 | RoBERTa-wwm-ext **large** + 10維L1 | 0.67 | 0.86 | 0.91 | **0.39** | **val 判淘汰,test A_PCC 最高** |
 
 ---
 
@@ -85,6 +87,24 @@ val 上驅動我們提交決策的那套敘事（「31 維強度特徵有害、s
 > test 證據顯示**兩者皆不成立** → 論文不得宣稱 source-aware 有效，
 > 應改寫為「這些在 val 上看似有效的技巧，在 test 上都落在雜訊內」。
 
+### 再一次 val→test 翻轉：RoBERTa-large
+
+| 系統 | A_PCC **val** | val 當時判定 | A_PCC **test** |
+|---|---|---|---|
+| robertaL_s42 | 0.407（最差之一） | 「四指標全輸，確認淘汰」 | **0.39（全場最高）** |
+| roberta_s42 | — | — | 0.38 |
+| macbert（5-seed） | 0.42–0.45 | baseline | 0.372±0.004 |
+
+- **val 上被判「淘汰」的 robertaL,在 test 上 A_PCC 反而最高。** 又一次排序翻轉。
+- **但仍在雜訊內**：0.39 vs macbert 的 0.372,差 0.018 << n=1,100 的 CI 寬 0.103。
+  且 robertaL 的 **V_MAE 0.67 是全場最差**(val 也最差 0.691)→ 整體不會贏。
+- 論述紀律不變:**不能寫「robertaL 比較好」**。這是 selection-overfitting 的又一個實例——
+  某個在 val 上被自信否決的模型,在 test 上「贏」了某個維度,而兩者其實都在雜訊裡。
+
+**目前 test 上所有 run 的 A_PCC 全景**:落在 **0.357–0.39**（寬 0.033，仍 < CI 0.103）。
+encoder 換 roberta 的兩顆(0.38/0.39)數值略高於 macbert 群(0.357–0.372),
+但差距不足以在 n=1,100 上判定顯著。**arousal 天花板約 0.37–0.39,誰都突破不了。**
+
 ---
 
 ## 待提交清單（本機已備妥 zip）
@@ -92,10 +112,9 @@ val 上驅動我們提交決策的那套敘事（「31 維強度特徵有害、s
 `outputs/*_test.csv.zip`，依 `docs/remaining_experiments.md` P0-B 的價值排序：
 
 1. ✅ macbert_s42、✅ macbert_s1
-2. 🔲 macbert_s2 / s3 / s4（補完 seed 變異，最高 CP 值）
-3. 🔲 e10_seed_ens（驗證 ensemble 是否真的有害）
-4. 🔲 e18_l1_intensity（2×2 第三格）
-5. 🔲 macbert_pseudo_s42（E13 trade-off）
-6. 🔲 e20_rank_aug / roberta_s42 / robertaL_s42（補完）
+2. ✅ macbert_s2 / s3 / s4（seed 變異已算出 0.372±0.004）
+3. ✅ e18_l1_intensity、✅ e20_rank_aug、✅ roberta_s42、✅ robertaL_s42
+4. 🔲 e10_seed_ens（**驗證 ensemble 是否真的有害——最後一個高價值提交**）
+5. 🔲 macbert_pseudo_s42（E13 校準↔排序 trade-off 是否在 test 成立）
 
 之後 KG 消融的 18 個 run 訓練完，再各自提交。
