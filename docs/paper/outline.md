@@ -138,7 +138,9 @@
 | C2b 合成資料的傷害在文本不在標籤 | 實驗 5b：pred std 收回但 A_MAE 未回 | ✅ supported |
 | C2c 偽標的自我參照陷阱 | E13：A_MAE 修回、A_PCC 掉回 | ✅ supported（診斷屬推論，需寫成 "we hypothesize"） |
 | C3 小 validation 的 arousal 選擇不可靠 | val→test 落差 0.452→0.357；bootstrap n=200 的 A_PCC CI 寬 0.193（V 只有 0.083）；選擇差距僅 0.026；seed std 0.0055；test 預測分布與 val 相同 | ✅ **supported**（but 但書：CI 是在 dev 上估的代理值） |
-| source-aware loss 改善 arousal | 僅 E19 單 seed 的 val 分數，且 test 已崩 | ❌ **needs evidence — 必須 P1-1，否則降級為 "we adopted" 不宣稱有效** |
+| source-aware loss 改善 arousal | test 上 E19(0.357) < E4(0.372)，效果**反向**且在雜訊內 | ❌ **FALSIFIED — test 證明無效，論文不得宣稱，改寫為「val 上看似有效實為雜訊」** |
+| 31 維強度特徵有害 | test 上 E18(0.370) ≈ E4(0.372) | ❌ **FALSIFIED — test 上無差異，val 的「有害」是雜訊** |
+| E4/E18/E19/E20 在 arousal 上不可區分 | test 四者全落 0.357–0.372（寬 0.015 << CI 0.103）；5-seed 0.372±0.004 | ✅ **supported（官方 test 實測）— 這是 selection-overfitting 的最強實證** |
 | L3 圖譜引導優於隨機種子 | **無任何對照組** | ❌ **needs evidence — 需 P2-1，否則方法節只描述、不宣稱優越** |
 | 31 維強度特徵有害 | E18 < E4（單 seed，val） | ⚠️ partial，需 P1-1 |
 
