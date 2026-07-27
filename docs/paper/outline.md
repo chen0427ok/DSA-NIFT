@@ -1,5 +1,16 @@
 # 論文骨架 — ROCLING-2026 Shared Task Paper
 
+> **✅ 2026-07-27 更新：已採用「方向 A」並寫出完整初稿 `paper/main.tex`。**
+> 標題：*Valence Is Solved, Arousal Is a Mirage — Why Arousal Gains on a Small
+> Validation Set Do Not Transfer*。核心圖 `paper/figures/val_vs_test_pcc.pdf`（Spearman −0.55）。
+> 心路歷程（L1→E4→照 NTULAW 加 source-aware→E19）當 Introduction 的 motivation，
+> 照去年前三名（CYUT/NTULAW/TCU）的建議做、被 test 揭穿不 transfer。
+> 待補：no-L1 test（notebook cell 9）補 Discussion 一格、作者資訊、Overleaf 編譯。
+> 下方為早期規劃，保留供追溯。
+
+---
+
+
 - **投稿**：EasyChair，track = *Special-Session Track – Shared Task on Chinese Dimension Sentiment Analysis*
 - **截止**：2026-08-10（AoE）
 - **語言**：英文 | **格式**：`rocling2026.sty`（範本在 `/Users/brian/Rocling2026/rocling2026-submission/`，工作副本在 `/Users/brian/Rocling2026/paper/`）
