@@ -14,6 +14,7 @@ L3 — 情感知識圖譜 (Affective Knowledge Graph)
 import os
 import csv
 import pickle
+import random
 import numpy as np
 import networkx as nx
 from sklearn.neighbors import NearestNeighbors
@@ -80,6 +81,104 @@ def seeds_for_target(G, v_range=None, a_range=None, n=15):
         out.append((w, d["valence"], d["arousal"]))
     out.sort(key=lambda x: -x[2])  # 依 arousal 高到低
     return out[:n]
+
+
+# ============================================================================
+# 種子詞選取策略（消融用）。上面的 seeds_for_target 是實驗 5 的原始行為，
+# 已凍結不得更動（條件 C 必須可復現）。以下為新增策略：
+#   seeds_random           條件 A：隨機抽詞（不看 VA）
+#   seeds_by_expansion     條件 E/F：G1 圖擴散 + G3 多樣性取樣（真正用到圖的邊）
+# 規劃見 docs/paper/kg_experiment_plan.md
+# ============================================================================
+
+def seeds_random(G, n=15, rng=None):
+    """條件 A：完全隨機抽 n 個情緒詞，不看 VA 區間。
+
+    對照組的意義：如果 A 與 C（VA 查表）打平，代表「VA 區間過濾」沒有作用，
+    增益只是「prompt 裡有一些情緒詞」而已。
+    """
+    rng = rng or random.Random(0)
+    words = list(G.nodes())
+    picked = rng.sample(words, min(n, len(words)))
+    return [(w, G.nodes[w]["valence"], G.nodes[w]["arousal"]) for w in picked]
+
+
+def seeds_by_expansion(G, v_range=None, a_range=None, n=15, rng=None,
+                       n_anchors=4, hops=2, va_slack=1.0):
+    """條件 E/F：G1 圖擴散 + G3 多樣性取樣。**這是唯一真正使用圖的邊的種子策略。**
+
+    與 seeds_for_target（查表）的差別：
+      查表 = 「全詞典裡 arousal 最高的前 n 個詞」，語意上是東拼西湊的集合，
+             而且是 sort 後取前 n，決定性 → 同一 bin 的每篇文章看到同一組詞。
+      本函式 = 從目標 VA 區間【隨機抽少數 anchor】(G3)，沿 kNN 邊擴散 hops 跳 (G1)，
+             收集語意鄰居後再用放寬的 VA 區間軟過濾。
+             → 種子集【語意連貫】（來自同一批 anchor 的鄰域）
+             → 每次呼叫【都不同】（anchor 隨機），解決 80 篇共用一組詞的問題
+             → 鄰居可能是詞典裡 VA 沒那麼極端、但語意相關的詞，擴大了覆蓋
+
+    Args:
+        n_anchors: 抽幾個 anchor（越少越聚焦、越多越發散）
+        hops:      沿邊擴散幾跳
+        va_slack:  擴散得到的鄰居，VA 可以超出目標區間多少（給圖結構發揮空間）
+    Returns:
+        [(word, valence, arousal)]，最多 n 個
+    """
+    rng = rng or random.Random(0)
+
+    def in_range(d, slack=0.0):
+        if v_range and not (v_range[0] - slack <= d["valence"] <= v_range[1] + slack):
+            return False
+        if a_range and not (a_range[0] - slack <= d["arousal"] <= a_range[1] + slack):
+            return False
+        return True
+
+    # 1) 候選 anchor = 嚴格落在目標 VA 區間的節點
+    candidates = [w for w, d in G.nodes(data=True) if in_range(d)]
+    if not candidates:
+        return []
+    anchors = rng.sample(candidates, min(n_anchors, len(candidates)))
+
+    # 2) 沿 kNN 邊擴散 hops 跳，記錄每個詞的最佳連結強度（供排序用）
+    scores = {}
+    frontier = {a: 1.0 for a in anchors}
+    for w in anchors:
+        scores[w] = 1.0
+    for _ in range(hops):
+        nxt = {}
+        for w, s in frontier.items():
+            for u, e in G[w].items():
+                cand = s * e["weight"]
+                if cand > scores.get(u, 0.0):
+                    scores[u] = cand
+                    nxt[u] = cand
+        frontier = nxt
+        if not frontier:
+            break
+
+    # 3) 用放寬的 VA 區間軟過濾（保留語意相關但 VA 稍偏的詞 = 圖結構的貢獻）
+    kept = [(w, G.nodes[w]["valence"], G.nodes[w]["arousal"], s)
+            for w, s in scores.items() if in_range(G.nodes[w], va_slack)]
+    # 4) 依連結強度排序（anchor 本身最高），取前 n
+    kept.sort(key=lambda x: -x[3])
+    return [(w, v, a) for w, v, a, _ in kept[:n]]
+
+
+def seed_coherence(G, words):
+    """診斷用：種子集的語意連貫度 = 詞對之間在圖上直接相連的比例（0–1）。
+
+    圖擴散（條件 E）應該顯著高於 VA 查表（條件 C），因為 E 的詞來自同一批 anchor 的鄰域。
+    這是「圖結構有在做事」最直接的量化證據，論文可直接引用。
+    """
+    ws = [w for w in words if w in G]
+    if len(ws) < 2:
+        return 0.0
+    linked = total = 0
+    for i in range(len(ws)):
+        for j in range(i + 1, len(ws)):
+            total += 1
+            if G.has_edge(ws[i], ws[j]):
+                linked += 1
+    return linked / total if total else 0.0
 
 
 def propagate_va(G, iters=2):
