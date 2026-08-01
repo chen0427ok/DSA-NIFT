@@ -36,7 +36,7 @@
 | 18 | E18：L1++ intensity | `--lex_mode l1_intensity`（31 維） | 0.641 | 0.865 | 0.909 | 0.408 | val |
 | **19** | **E19：source-aware（提交）** | **E18 + `--source_aware`（CVAS/CVAT arousal 降權）** | 0.666 | 0.869 | 0.870 | 0.452 | val |
 | 20 | E20：ranking-only | E19 + `--rank_aug`（合成資料只進 pairwise hinge） | 0.631 | 0.877 | 0.923 | 0.407 | val |
-| 21 | E21：dim-attention | `--pooling mean_cls_dim_attention`（無 L1） | 0.638 | 0.865 | 0.923 | 0.394 | val |
+| 21b | E21b：dim-attention + ranking | E19 的 31 維 intensity/source-aware + `--pooling mean_cls_dim_attention` + ranking | 0.638 | 0.865 | 0.923 | 0.394 | val |
 
 ### 同一批系統的官方 **test** 分數（n=1,100）
 
@@ -46,6 +46,7 @@
 | E18 | 31 維 intensity | 0.61 | 0.87 | 0.93 | 0.370 |
 | **E19**（正式提交） | + source-aware | 0.6200 | 0.8663 | 0.9259 | **0.3566** |
 | E20 | ranking-only | 0.63 | 0.87 | 0.93 | 0.370 |
+| E13 teacher pseudo（3-seed mean） | 318 篇 teacher 偽標增強 | 0.620 | 0.870 | 0.927 | 0.370 |
 | roberta_s42 | RoBERTa-base + L1 | 0.62 | 0.86 | 0.92 | 0.38 |
 | robertaL_s42 | RoBERTa-large + L1 | 0.67 | 0.86 | 0.91 | **0.39** |
 
@@ -107,46 +108,74 @@
 | 條件 | test A_PCC | test A_MAE | 逐 seed A_PCC |
 |---|---|---|---|
 | N | 0.353±0.012 | 1.07 | 0.34 / 0.36 / 0.36 |
+| **A** | **0.367±0.012** | 1.09 | 0.35 / 0.38 / 0.37 |
 | C | 0.370±0.017 | 1.08 | 0.35 / 0.38 / 0.38 |
 | E | 0.373±0.012 | 1.06 | 0.36 / 0.38 / 0.38 |
 | F | 0.38（s42；s1/s2 待記） | 1.08 | 0.38 / — / — |
 | F2 | 0.387±0.012 | 1.04 | 0.40 / 0.38 / 0.38 |
 | **無增強 baseline** | 0.372±0.004 | **0.93** | — |
 
-> **成分分解**：N 0.353 →(+種子詞 0.017)→ C 0.370 →(+圖結構 **0.003，無效**)→ E 0.373
-> →(+錨定/長度 0.014)→ F2 0.387。**圖結構貢獻≈0；最強的 F2 仍打不贏不增強**（A_PCC 微增被 A_MAE +0.11 抵銷）。
+> **成分分解**：N 0.353 →(+任意種子詞 0.014)→ A 0.367
+> →(+VA 過濾 **0.003，無效**)→ C 0.370 →(+圖結構 **0.003，無效**)→ E 0.373
+> →(+錨定/長度 0.014)→ F2 0.387。增益主要來自「有 seed words」與風格/長度對齊，
+> **不是 VA 過濾或圖結構**；最強的 F2 仍打不贏不增強（A-PCC 微增被 A-MAE +0.11 抵銷）。
 > dev 分數六條件全在 0.598–0.603（失真，僅參考）。
 
 ---
 
-## 5. 需要提交的 CSV（`.csv.zip`，內部檔名必為 `submission.csv`）
+## 5. Teacher pseudo-label：3-seed test
+
+E13：以 3 個 teacher 重標 400 篇合成資料，移除離群值後保留 318 篇。
+
+| seed | V-MAE | V-PCC | A-MAE | A-PCC |
+|---|---|---|---|---|
+| s1 | 0.62 | 0.87 | 0.94 | 0.37 |
+| s2 | 0.62 | 0.87 | 0.92 | 0.37 |
+| s42 | 0.62 | 0.87 | 0.92 | 0.37 |
+| **mean±std** | **0.620±0.000** | **0.870±0.000** | **0.927±0.009** | **0.370±0.000** |
+
+→ test 上與無增強 baseline（V-PCC 0.870、A-MAE 0.928、A-PCC 0.372）幾乎相同。
+因此 val 上「teacher 偽標改善校準但犧牲排序」的故事沒有在 test 重現；
+較安全的結論是：**teacher pseudo-label 對 test 沒有可測增益，也沒有明顯額外傷害。**
+
+---
+
+## 6. 需要提交的 CSV（`.csv.zip`，內部檔名必為 `submission.csv`）
 
 **提交規則**：上傳 zip，內含 `submission.csv`（欄位 `ID,Valence,Arousal`，1,100 列）；每天 10 次額度。
 本機路徑：`baseline/outputs/`。
 
 ### ✅ 已有官方分數（不用再交）
 E4/macbert_s1–s4/s42、E18、E19、E20、roberta_s42、robertaL_s42、
-nolex_s1/s2/s42、aug_{N,C,E}_全3seed、aug_F_s42、aug_F2_全3seed
+nolex_s1/s2/s42、macbert_pseudo_s1/s2/s42、
+aug_{N,A,C,E}_全3seed、aug_F_s42、aug_F2_全3seed
 
-### 🔲 還沒交（本機已備 zip，直接上傳即可）
+### 🔲 已有 test ZIP，可直接上傳
 
 | 優先 | 檔案 | 為什麼交 |
 |---|---|---|
-| ★★ | `aug_A_s1_test.csv.zip`、`aug_A_s2_test.csv.zip`、`aug_A_s42_test.csv.zip` | 「隨機種子」對照組，補完消融表（確認 N→C 的 +0.017 是 VA 過濾還是隨便給詞） |
-| ★ | `aug_F_s1_test.csv.zip`、`aug_F_s2_test.csv.zip` | 補齊 F 的 3 seed（目前只有 s42），讓 E→F→F2 遞進完整 |
-| ☆ | `macbert_pseudo_s1_test.csv.zip`、`macbert_pseudo_s2_test.csv.zip`、`macbert_pseudo_s42_test.csv.zip` | E13 teacher 偽標的 test（驗證校準↔排序 trade-off 是否在 test 成立） |
+| ★★★ | `aug_F_s1_test.csv.zip`、`aug_F_s2_test.csv.zip` | 補齊 F 的 3 seed，拆開「style anchor」與「match_real 長度」的貢獻；目前唯一可直接提交且對論文仍有明顯價值的組別 |
 
-### 🔲 想交但還沒有 test 預測（需先在 Colab 產生）
-`e10_seed_ens`、`e12_enc_ens`、`e13_pseudo_ens`（ensemble 檔，本機無 test 預測）
-→ 若要驗證「ensemble 在 test 也無效」，需在 Colab 用 `ensemble.py` 對 test 產生預測後再打包。
-（優先度低：單模型的 macbert_pseudo 已能代表 teacher 路線。）
+### 🔲 模型/val CSV 已完成，但還沒有 test CSV
 
-> **注**：論文主結論（§1–4）已由現有 test 分數完全支撐，上述待提交項屬**補完消融的完整性**，
-> 非必要。若額度有限，優先交 `aug_A`（★★）即可。
+下列現有檔案都是 **200-row validation submission，不能直接上傳 test**；需先用 1,100-row
+test predictions 重新產生 `{run}_test_submission.csv` 並打包。
+
+| 優先 | 現有 CSV | 尚缺什麼 | 論文價值 |
+|---|---|---|---|
+| ★★ | `e21_dim_attention_rank_aug_submission.csv` | 從 `e21_dim_attention_rank_aug_best.pt` 推論 test | E21b 已有 val 0.394；補 test 可再增加一個 val→test reversal/transfer 檢驗點 |
+| ★★ | `e10_seed_ens_submission.csv` | 將既有 5 顆 MacBERT test predictions 等權融合 | 直接檢驗 multi-seed ensemble 在 test 是否仍無效；5 顆 constituent test CSV 已齊 |
+| ★ | `e12_enc_ens_submission.csv` | 依原 E12 權重重建 test ensemble | 檢驗跨 encoder ensemble；需先確認原 7 模型中每顆都有 test predictions |
+| ★ | `e12_enc_mean_submission.csv` | 重建 test mean ensemble | 與 weighted E12 對照，但價值低於 E10/E21b |
+| ☆ | `e21_dim_attention_submission.csv` | 從 `e21_dim_attention_best.pt` 推論 test | 純 dim-attention；目前缺可靠的 official val scalar，論文配對價值較低 |
+| ☆ | `e13_pseudo_ens_submission.csv` | 融合 pseudo 三顆 test predictions | 單模型 pseudo 的 3-seed test 已顯示無增益，ensemble 只屬完整性補充 |
+
+> **提交建議**：先交 `aug_F_s1/s2`；若願意產生新 test CSV，再依序做
+> E21b、E10、E12。Pseudo ensemble 的邊際論文價值最低。
 
 ---
 
-## 6. 復現指令對照
+## 7. 復現指令對照
 
 ```bash
 # 主線
