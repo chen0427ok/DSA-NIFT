@@ -43,17 +43,38 @@ def build_notebook():
         # 2) 掛載 Drive 並取得 repo（private repo token 不寫入 notebook）
         from google.colab import drive
         drive.mount('/content/drive')
-        import getpass, os, pathlib, subprocess
+        import contextlib, getpass, os, pathlib, subprocess, tempfile
 
         REPO_URL = "https://github.com/chen0427ok/DSA-NIFT.git"
         REPO_PATH = pathlib.Path("/content/DSA-NIFT")
         RESULT_ROOT = pathlib.Path("/content/drive/MyDrive/ROCLING2026_source_aware_sensitivity")
         RESULT_ROOT.mkdir(parents=True, exist_ok=True)
+        @contextlib.contextmanager
+        def git_auth_env(token):
+            env = os.environ.copy()
+            helper = None
+            if token:
+                fd, helper = tempfile.mkstemp(prefix="rocling-askpass-")
+                os.close(fd)
+                pathlib.Path(helper).write_text(
+                    '#!/bin/sh\ncase "$1" in *Username*) printf "%s\\n" "x-access-token" ;; '
+                    '*) printf "%s\\n" "$ROCLING_GITHUB_TOKEN" ;; esac\n', encoding="utf-8")
+                os.chmod(helper, 0o700)
+                env.update({"GIT_ASKPASS": helper, "GIT_TERMINAL_PROMPT": "0",
+                            "ROCLING_GITHUB_TOKEN": token})
+            try:
+                yield env
+            finally:
+                if helper:
+                    pathlib.Path(helper).unlink(missing_ok=True)
+
+        GITHUB_TOKEN = getpass.getpass("GitHub token（repo 公開則直接 Enter）: ").strip()
         if not (REPO_PATH / ".git").exists():
-            token = getpass.getpass("GitHub token（repo 公開則直接 Enter）: ").strip()
-            clone_url = REPO_URL if not token else REPO_URL.replace("https://", f"https://x-access-token:{token}@")
-            subprocess.run(["git", "clone", "--branch", "main", clone_url, str(REPO_PATH)], check=True)
-            del token, clone_url
+            with git_auth_env(GITHUB_TOKEN) as git_env:
+                subprocess.run(["git", "clone", "--branch", "main", REPO_URL,
+                                str(REPO_PATH)], check=True, env=git_env)
+        subprocess.run(["git", "remote", "set-url", "origin", REPO_URL],
+                       cwd=REPO_PATH, check=True)
         os.chdir(REPO_PATH)
         REPO_COMMIT = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
         print("repo", REPO_PATH, REPO_COMMIT)
@@ -107,6 +128,16 @@ def build_notebook():
                     "--epochs", "4", "--batch_size", "32", "--lr", "2e-05",
                     "--max_len", "256"]
 
+        def test_submission_name(config, seed):
+            return f"{run_name(config, seed)}_test_submission.csv"
+
+        def build_test_command(config, seed, checkpoint, out_dir):
+            return [sys.executable, "predict.py", "--ckpt", str(checkpoint),
+                    "--input", "data/DSANIDF_TestSet.csv", "--run_name",
+                    run_name(config, seed), "--split", "test", "--model", MODEL_ID,
+                    "--lex_mode", "l1_intensity", "--out_dir", str(out_dir),
+                    "--batch_size", "32", "--max_len", "256"]
+
         def sha256(path):
             digest = hashlib.sha256()
             with pathlib.Path(path).open("rb") as handle:
@@ -123,6 +154,47 @@ def build_notebook():
                 out[f"{prefix}_MAE"] = float(np.mean(np.abs(y - yhat)))
                 out[f"{prefix}_PCC"] = float(np.corrcoef(y, yhat)[0, 1]) if np.std(yhat) > 1e-12 else 0.0
             return out
+
+        def validate_test_submission(path, test_input, required_rows=1100):
+            frame = pd.read_csv(path, dtype={"ID": str})
+            if list(frame.columns) != ["ID", "Valence", "Arousal"]:
+                raise ValueError("columns must be exactly ID,Valence,Arousal")
+            if len(frame) != required_rows:
+                raise ValueError(f"row count must be {required_rows}, got {len(frame)}")
+            if frame["ID"].isna().any() or frame["ID"].astype(str).str.strip().eq("").any():
+                raise ValueError("IDs must be non-empty")
+            if frame["ID"].duplicated().any():
+                raise ValueError("IDs must be unique")
+            expected_ids = pd.read_csv(test_input, dtype={"ID": str})["ID"].tolist()
+            if frame["ID"].astype(str).tolist() != expected_ids:
+                raise ValueError("ID sequence does not match official test input")
+            values = frame[["Valence", "Arousal"]].apply(pd.to_numeric, errors="coerce").to_numpy()
+            if not np.isfinite(values).all():
+                raise ValueError("predictions must be finite")
+            if ((values < 1) | (values > 9)).any():
+                raise ValueError("predictions must be in range [1,9]")
+            return {"rows": len(frame), "sha256": sha256(path)}
+
+        def required_run_artifacts():
+            return ("checkpoint.pt", "dev_predictions.csv", "val_predictions.csv",
+                    "validation_submission.csv", "test_predictions.csv",
+                    "test_submission.csv", "train.log", "test_inference.log")
+
+        def publication_paths(result_root, repo_path):
+            return [(pathlib.Path(result_root) / "runs" / run_name(config, seed) /
+                     "test_submission.csv",
+                     pathlib.Path(repo_path) / "test_submissions" /
+                     test_submission_name(config, seed))
+                    for config, seed in expected_runs()]
+
+        def validate_staged_paths(staged, expected):
+            wanted = {pathlib.Path(path).as_posix() for path in expected}
+            actual = {pathlib.Path(path).as_posix() for path in staged}
+            if not actual.issubset(wanted):
+                raise RuntimeError(f"unexpected staged paths: actual={sorted(actual)}, expected={sorted(wanted)}")
+
+        def git_push_command():
+            return ["git", "push", "origin", "HEAD:main"]
 
         def aggregate_rows(rows):
             frame = pd.DataFrame(rows)
@@ -152,7 +224,8 @@ def build_notebook():
             return frame.reset_index(drop=True), pd.DataFrame(summary_rows), pd.DataFrame(paired_rows)
 
         def validate_inputs(repo_path):
-            required = [repo_path / "train_v2.py", repo_path / "data/train.csv",
+            required = [repo_path / "train_v2.py", repo_path / "predict.py",
+                        repo_path / "data/DSANIDF_TestSet.csv", repo_path / "data/train.csv",
                         repo_path / "data/dev.csv", repo_path / "external/emobank/CVAW_all_SD.csv",
                         repo_path / "external/emobank/CVAP_all_SD.csv"]
             missing = [str(path) for path in required if not path.exists()]
@@ -191,9 +264,17 @@ def build_notebook():
                 receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
                 if receipt["config"] != config or receipt["seed"] != seed:
                     return False
-                return all((run_dir / item["name"]).exists() and
+                recorded = {item["name"] for item in receipt["artifacts"]}
+                if not set(required_run_artifacts()).issubset(recorded):
+                    return False
+                valid = all((run_dir / item["name"]).exists() and
                            sha256(run_dir / item["name"]) == item["sha256"]
                            for item in receipt["artifacts"])
+                if not valid:
+                    return False
+                validate_test_submission(run_dir / "test_submission.csv",
+                                         REPO_PATH / "data/DSANIDF_TestSet.csv")
+                return True
             except (KeyError, ValueError, OSError):
                 return False
 
@@ -228,11 +309,27 @@ def build_notebook():
                 if not source.exists():
                     raise FileNotFoundError(f"training did not create {source}")
                 shutil.copy2(source, run_dir / target)
+            test_out = run_dir / "test_output"
+            if test_out.exists():
+                shutil.rmtree(test_out)
+            test_out.mkdir()
+            run_streamed(build_test_command(config, seed, run_dir / "checkpoint.pt", test_out),
+                         run_dir / "test_inference.log")
+            test_pred = test_out / "preds" / f"{name}_test.csv"
+            test_sub = test_out / f"{name}_test_submission.csv"
+            if not test_pred.exists() or not test_sub.exists():
+                raise FileNotFoundError("predict.py did not create both test outputs")
+            shutil.move(test_pred, run_dir / "test_predictions.csv")
+            shutil.move(test_sub, run_dir / "test_submission.csv")
+            shutil.rmtree(test_out)
+            test_validation = validate_test_submission(
+                run_dir / "test_submission.csv", REPO_PATH / "data/DSANIDF_TestSet.csv")
             metrics = compute_dev_metrics(run_dir / "dev_predictions.csv")
             artifacts = [{"name": p.name, "bytes": p.stat().st_size, "sha256": sha256(p)}
                          for p in sorted(run_dir.iterdir()) if p.is_file() and p.name != "receipt.json"]
             receipt = {"run_name": name, "config": config, "seed": seed,
                        "weights": CONFIGS[config], "metrics": metrics,
+                       "test_submission": test_validation,
                        "command": build_train_command(config, seed),
                        "completed_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
                        "artifacts": artifacts}
@@ -281,7 +378,74 @@ def build_notebook():
         print(f"archive: {drive_archive} ({drive_archive.stat().st_size / 1e9:.2f} GB)")
         '''),
         cell("code", r'''
-        # 7) 下載結果；若瀏覽器阻擋大型檔案，可直接從上方 Drive 路徑取得
+        # 7) 可選：驗證 12 份 test submissions 後，一次 commit 並 non-force push 到 main
+        PUSH_TO_MAIN = False  # 確認要發布後，改成 True 再執行本 cell
+
+        pairs = publication_paths(RESULT_ROOT, REPO_PATH)
+        for source, destination in pairs:
+            if not source.exists():
+                raise RuntimeError(f"incomplete 12-run matrix; missing {source}")
+            validate_test_submission(source, REPO_PATH / "data/DSANIDF_TestSet.csv")
+            print(source, "->", destination.relative_to(REPO_PATH))
+
+        if not PUSH_TO_MAIN:
+            print("尚未 push：請確認上列 12 份檔案，將 PUSH_TO_MAIN 改成 True 後重跑本 cell。")
+        else:
+            if not GITHUB_TOKEN:
+                raise RuntimeError("GitHub token is required to push to origin/main")
+            with git_auth_env(GITHUB_TOKEN) as git_env:
+                subprocess.run(["git", "fetch", "origin", "main"], cwd=REPO_PATH,
+                               check=True, env=git_env)
+                head = subprocess.check_output(["git", "rev-parse", "HEAD"],
+                                               cwd=REPO_PATH, text=True).strip()
+                remote = subprocess.check_output(["git", "rev-parse", "origin/main"],
+                                                 cwd=REPO_PATH, text=True).strip()
+                if head != remote:
+                    ancestor = subprocess.run(["git", "merge-base", "--is-ancestor",
+                                               "HEAD", "origin/main"], cwd=REPO_PATH).returncode == 0
+                    if not ancestor:
+                        raise RuntimeError("local checkout diverged from origin/main; refusing to rewrite history")
+                    subprocess.run(["git", "merge", "--ff-only", "origin/main"],
+                                   cwd=REPO_PATH, check=True)
+
+                destinations = []
+                for source, destination in pairs:
+                    destination.parent.mkdir(parents=True, exist_ok=True)
+                    if destination.exists() and sha256(destination) != sha256(source):
+                        raise RuntimeError(f"remote-tracked destination differs: {destination}")
+                    shutil.copy2(source, destination)
+                    destinations.append(destination.relative_to(REPO_PATH))
+
+                subprocess.run(["git", "add", "--", *map(str, destinations)],
+                               cwd=REPO_PATH, check=True)
+                staged = subprocess.check_output(
+                    ["git", "diff", "--cached", "--name-only"], cwd=REPO_PATH,
+                    text=True).splitlines()
+                validate_staged_paths(staged, destinations)
+                if staged:
+                    author_name = subprocess.check_output(
+                        ["git", "log", "-1", "--format=%an"], cwd=REPO_PATH, text=True).strip()
+                    author_email = subprocess.check_output(
+                        ["git", "log", "-1", "--format=%ae"], cwd=REPO_PATH, text=True).strip()
+                    subprocess.run(["git", "config", "user.name", author_name],
+                                   cwd=REPO_PATH, check=True)
+                    subprocess.run(["git", "config", "user.email", author_email],
+                                   cwd=REPO_PATH, check=True)
+                    subprocess.run(["git", "commit", "-m",
+                                    "加入 source-aware sensitivity test predictions"],
+                                   cwd=REPO_PATH, check=True)
+                    try:
+                        subprocess.run(git_push_command(), cwd=REPO_PATH, check=True, env=git_env)
+                    except subprocess.CalledProcessError as exc:
+                        raise RuntimeError(
+                            "non-force push rejected; local commit preserved. Review origin/main and rerun safely."
+                        ) from exc
+                    print("已 commit 並 push 12 份 test submissions 到 origin/main")
+                else:
+                    print("origin/main 已包含完全相同的 12 份 test submissions；未建立重複 commit")
+        '''),
+        cell("code", r'''
+        # 8) 下載結果；若瀏覽器阻擋大型檔案，可直接從上方 Drive 路徑取得
         from google.colab import files
         files.download("/content/source_aware_sensitivity_results.zip")
         '''),

@@ -95,6 +95,99 @@ class NotebookContractTests(unittest.TestCase):
                          "incomplete 12-run matrix"):
             self.assertIn(fragment, self.source)
 
+    def write_test_csvs(self, root, submission_rows=None):
+        test_input = root / "test.csv"
+        submission = root / "submission.csv"
+        test_input.write_text("ID,Text\na,甲\nb,乙\nc,丙\n", encoding="utf-8")
+        rows = submission_rows or ["a,1,9", "b,5.5,4", "c,9,1"]
+        submission.write_text("ID,Valence,Arousal\n" + "\n".join(rows) + "\n",
+                              encoding="utf-8")
+        return submission, test_input
+
+    def test_test_command_uses_matching_checkpoint_and_official_input(self):
+        cmd = self.ns["build_test_command"](
+            "current", 42, pathlib.Path("model.pt"), pathlib.Path("out"))
+        expected = {"--ckpt": "model.pt", "--input": "data/DSANIDF_TestSet.csv",
+                    "--run_name": "sa_sensitivity_current_s42", "--split": "test",
+                    "--lex_mode": "l1_intensity", "--out_dir": "out",
+                    "--batch_size": "32", "--max_len": "256"}
+        self.assertEqual(cmd[1], "predict.py")
+        for flag, value in expected.items():
+            self.assertEqual(cmd[cmd.index(flag) + 1], value)
+
+    def test_twelve_test_submission_names_are_unique_and_exact(self):
+        names = [self.ns["test_submission_name"](c, s)
+                 for c, s in self.ns["expected_runs"]()]
+        self.assertEqual(len(set(names)), 12)
+        self.assertIn("sa_sensitivity_current_s42_test_submission.csv", names)
+
+    def test_valid_test_submission_returns_hash_and_row_count(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            submission, test_input = self.write_test_csvs(pathlib.Path(tmp))
+            result = self.ns["validate_test_submission"](
+                submission, test_input, required_rows=3)
+        self.assertEqual(result["rows"], 3)
+        self.assertEqual(len(result["sha256"]), 64)
+
+    def test_submission_validation_rejects_wrong_id_order(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            submission, test_input = self.write_test_csvs(
+                pathlib.Path(tmp), ["b,1,9", "a,5,4", "c,9,1"])
+            with self.assertRaisesRegex(ValueError, "ID sequence"):
+                self.ns["validate_test_submission"](submission, test_input, required_rows=3)
+
+    def test_submission_validation_rejects_nonfinite_and_out_of_range(self):
+        for bad, message in ((["a,nan,9", "b,5,4", "c,9,1"], "finite"),
+                             (["a,0.9,9", "b,5,4", "c,9,1"], "range")):
+            with self.subTest(message=message), tempfile.TemporaryDirectory() as tmp:
+                submission, test_input = self.write_test_csvs(pathlib.Path(tmp), bad)
+                with self.assertRaisesRegex(ValueError, message):
+                    self.ns["validate_test_submission"](
+                        submission, test_input, required_rows=3)
+
+    def test_submission_validation_rejects_schema_count_and_bad_ids(self):
+        cases = (
+            ("ID,Valence,Wrong\na,1,9\nb,5,4\nc,9,1\n", "columns", 3),
+            ("ID,Valence,Arousal\na,1,9\nb,5,4\n", "row count", 3),
+            ("ID,Valence,Arousal\na,1,9\na,5,4\nc,9,1\n", "unique", 3),
+            ("ID,Valence,Arousal\na,1,9\n,5,4\nc,9,1\n", "non-empty", 3),
+        )
+        for content, message, count in cases:
+            with self.subTest(message=message), tempfile.TemporaryDirectory() as tmp:
+                root = pathlib.Path(tmp)
+                _, test_input = self.write_test_csvs(root)
+                submission = root / "submission.csv"
+                submission.write_text(content, encoding="utf-8")
+                with self.assertRaisesRegex(ValueError, message):
+                    self.ns["validate_test_submission"](
+                        submission, test_input, required_rows=count)
+
+    def test_receipt_contract_requires_test_artifacts(self):
+        artifacts = self.ns["required_run_artifacts"]()
+        self.assertIn("test_predictions.csv", artifacts)
+        self.assertIn("test_submission.csv", artifacts)
+
+    def test_publication_paths_cover_exact_matrix(self):
+        pairs = self.ns["publication_paths"](pathlib.Path("drive"), pathlib.Path("repo"))
+        self.assertEqual(len(pairs), 12)
+        self.assertEqual(len({str(dst) for _, dst in pairs}), 12)
+        self.assertEqual(str(pairs[0][1]),
+                         "repo/test_submissions/sa_sensitivity_uniform_s42_test_submission.csv")
+
+    def test_unexpected_staged_path_is_rejected(self):
+        expected = [pathlib.Path("test_submissions/a.csv")]
+        with self.assertRaisesRegex(RuntimeError, "unexpected staged paths"):
+            self.ns["validate_staged_paths"](
+                ["test_submissions/a.csv", "outputs/model.pt"], expected)
+
+    def test_push_is_opt_in_non_force_and_token_is_not_embedded(self):
+        self.assertEqual(self.ns["git_push_command"](),
+                         ["git", "push", "origin", "HEAD:main"])
+        self.assertNotIn("--force", self.source)
+        self.assertNotIn("x-access-token:", self.source)
+        self.assertIn("PUSH_TO_MAIN = False", self.source)
+        self.assertIn("GIT_ASKPASS", self.source)
+
 
 if __name__ == "__main__":
     unittest.main()

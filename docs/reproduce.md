@@ -76,6 +76,16 @@ seeds 42、1、2。這是預先指定的 sensitivity check，不是事後挑選�
 `source_aware_sensitivity_results.zip`。請將該 ZIP 完整帶回做論文分析；因含 12 個
 checkpoint，檔案可能很大，瀏覽器下載失敗時可直接從 notebook 顯示的 Drive 路徑取得。
 
+每個 run 完成後，notebook 也會以相同 checkpoint 對
+`data/DSANIDF_TestSet.csv` 執行 `predict.py`，將完整預測與官方格式 submission 納入
+Drive receipt。12 組都通過 1,100 rows、`ID,Valence,Arousal`、ID 順序及 1–9 範圍
+驗證後，可執行獨立的 publication cell：先檢查列出的 12 個來源與目標檔，把
+`PUSH_TO_MAIN = False` 改成 `True`，再重跑該 cell。它只會 stage
+`test_submissions/sa_sensitivity_*_test_submission.csv`，以單一 commit
+`加入 source-aware sensitivity test predictions` non-force push 到 `origin/main`。
+GitHub token 透過隱藏 prompt 與暫時 `GIT_ASKPASS` helper 使用，不寫入 remote URL、
+notebook、log 或 manifest；遠端分歧、同名異內容或 push race 會安全停止，不會 force-push。
+
 本機收尾：
 ```bash
 python fetch_results.py                        # 解 ~/Downloads/*_results.zip 進 outputs/
