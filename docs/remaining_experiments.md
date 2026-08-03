@@ -20,6 +20,22 @@
 
 ---
 
+## ✅ P0-C — Batch-32 controlled ablation 已完成（2026-08-04）
+
+已在完全相同的 MacBERT、batch 32、lr 2e-5、4 epochs、max_len 256、checkpoint criterion
+與 seeds 42/1/2 下完成四條件對照：No L1、L1、E、F2。官方 test mean±sample SD：
+
+| Condition | V-MAE | V-PCC | A-MAE | A-PCC |
+|---|---:|---:|---:|---:|
+| No L1 | 0.617±0.006 | 0.870±0.000 | 0.923±0.023 | 0.363±0.021 |
+| L1 | 0.613±0.006 | 0.870±0.000 | 0.923±0.040 | 0.370±0.000 |
+| E | 0.630±0.017 | 0.867±0.006 | 1.057±0.025 | 0.373±0.012 |
+| F2 | 0.630±0.000 | 0.867±0.006 | 1.073±0.115 | 0.387±0.012 |
+
+這組結果已補齊論文的 L1 與 augmentation matched-control 比較；後續不需再補跑這四個條件。
+
+---
+
 ## ✅ P0-A — 已完成，而且拿到了論文最強的結果
 
 **提交上限：每天 10 次**（截止 8/10，等於額度近乎無限——應該把所有對照都測到 test 上）。
@@ -39,9 +55,9 @@ E4（`macbert_s42`）的 test 分數已取得：
 > ⚠️ 論述紀律：test 上 0.013 的差距同樣在噪聲裡（n=1,100 的 A_PCC CI 寬約 0.103）。
 > **不要寫「E4 比較好」**，要寫「兩者從頭到尾不可區分，而我們把不可區分當成可區分」。
 
-> ⚠️ **誠實註記**：原始實驗 4 的 checkpoint（`train.py` 產的 `best_model.pt`）已不存在，
-> `macbert_s42` 是 `train_v2.py` 的復現版，**batch size 為 64 而非 32**（E10 在 A100 上跑的）。
-> dev 分數一致（A_PCC 0.615 vs 實驗 4 的 0.609），可視為同一設定，但論文要標明這點。
+> **歷史註記**：原始實驗 4 的 checkpoint（`train.py` 產的 `best_model.pt`）已不存在；
+> `macbert_s42` 是 batch-64 復現版。L1 與 augmentation 的論文比較現已由 P0-C 的
+> batch-32 matched runs 取代。
 
 ### 🚨 P0-B — 因為額度充足，論文的主表應該整張搬到 test set
 
