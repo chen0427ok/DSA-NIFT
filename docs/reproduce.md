@@ -58,6 +58,23 @@ notebook 對照：
 | `notebooks/Rocling2026_Colab_ensemble.ipynb` | E10–E12 |
 | `notebooks/Rocling2026_Colab_e13.ipynb` | E13 |
 | `notebooks/Rocling2026_Colab_e18_e21.ipynb` | E18–E21（cell 18 有 E22 指令） |
+| `notebooks/Rocling2026_Colab_source_aware_sensitivity.ipynb` | Source-aware 權重 sensitivity：4 組配置 × seeds 42/1/2 |
+
+### Source-aware 權重 sensitivity（12 runs）
+
+直接在 Colab GPU runtime 依序執行
+`notebooks/Rocling2026_Colab_source_aware_sensitivity.ipynb`。Notebook 固定使用
+MacBERT、L1++、batch size 32、4 epochs、learning rate 2e-5 與 max length 256，
+比較 uniform、mild、current、reflection-swap 四組 arousal source weights；每組使用
+seeds 42、1、2。這是預先指定的 sensitivity check，不是事後挑選最佳權重的 search。
+
+每個完成的 run 都會連同 checkpoint、dev/validation predictions、log、command、metrics
+與 SHA-256 receipt 保存到 Google Drive。Colab 中斷後重跑訓練 cell，只有通過 receipt
+驗證的 run 才會跳過；少任何一組時，彙整 cell 會以
+`incomplete 12-run matrix` 停止。12 組完整後會自動產生 mean±sample-SD、相對 uniform
+的 paired-seed differences、LaTeX 表格與 manifest，最後下載
+`source_aware_sensitivity_results.zip`。請將該 ZIP 完整帶回做論文分析；因含 12 個
+checkpoint，檔案可能很大，瀏覽器下載失敗時可直接從 notebook 顯示的 Drive 路徑取得。
 
 本機收尾：
 ```bash
