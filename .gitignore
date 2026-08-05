@@ -10,3 +10,4 @@ data/train_base.csv
 data/train_aug_pseudo.csv
 *.zip
 .env
+.worktrees/
