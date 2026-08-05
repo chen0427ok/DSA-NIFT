@@ -124,6 +124,12 @@ class MatrixTests(unittest.TestCase):
         self.assertEqual(self.ns["source_weight_spec"]("reflection_swap"),
                          "sentence=1:0.25,text=1:0.5,reflection=1:0.75,edu2021=1:1")
 
+    def test_subprocesses_run_unbuffered(self):
+        """Without -u the child buffers ~1.5 KB of stdout until exit and looks hung."""
+        for command in (self.ns["build_train_command"]("current", 1),
+                        self.ns["build_test_command"]("current", 1, "ck.pt", "out")):
+            self.assertEqual(command[1], "-u", command)
+
     def test_train_command_fixes_every_controlled_argument(self):
         command = self.ns["build_train_command"]("current", 1)
         self.assertIn("train_v2.py", command)

@@ -206,8 +206,11 @@ def build_notebook():
             weights = CONFIGS[config]
             return ",".join(f"{src}=1:{_fmt_weight(weights[src])}" for src in SOURCES)
 
+        # -u 是必要的：子行程的 stdout 是 pipe 而非 tty，Python 會用 8KB 區塊緩衝，
+        # 而整個 run 的 stdout 只有 ~1.5 KB，沒有 -u 就會到訓練結束才一次吐出，
+        # 看起來像當掉。（bufsize=1 只影響父行程這端，救不了子行程。）
         def build_train_command(config, seed):
-            return [sys.executable, "train_v2.py", "--model", MODEL_ID,
+            return [sys.executable, "-u", "train_v2.py", "--model", MODEL_ID,
                     "--lex_mode", "l1_intensity", "--source_aware",
                     "--source_weights", source_weight_spec(config),
                     "--run_name", run_name(config, seed), "--seed", str(seed),
@@ -215,7 +218,7 @@ def build_notebook():
                     "--max_len", "256"]
 
         def build_test_command(config, seed, checkpoint, out_dir):
-            return [sys.executable, "predict.py", "--ckpt", str(checkpoint),
+            return [sys.executable, "-u", "predict.py", "--ckpt", str(checkpoint),
                     "--input", TEST_INPUT, "--run_name", run_name(config, seed),
                     "--split", "test", "--model", MODEL_ID,
                     "--lex_mode", "l1_intensity", "--out_dir", str(out_dir),
@@ -377,7 +380,14 @@ def build_notebook():
                 return None
 
         def run_streamed(command, log_path, header):
-            """即時印出並落地成 log；訓練每 50 steps 有輸出，不會看起來像當掉。"""
+            """即時印出並落地成 log。
+
+            子行程一定要帶 -u（見 build_train_command），否則 stdout 會被 8KB 區塊
+            緩衝，整個 run 到結束才吐輸出。有 -u 之後訓練每 50 steps 就有一行。
+            例外：HF 首次下載 MacBERT 的進度條用 \\r 不換行，這裡的逐行迭代讀不到，
+            所以第一個 run 開頭仍會有 1-2 分鐘沒有輸出，那是在下載模型。
+            """
+            print(f"--- {header} ---", flush=True)
             with pathlib.Path(log_path).open("a", encoding="utf-8") as log:
                 log.write(f"\n===== {header} =====\n$ {' '.join(command)}\n")
                 process = subprocess.Popen(command, cwd=REPO_PATH, text=True,
