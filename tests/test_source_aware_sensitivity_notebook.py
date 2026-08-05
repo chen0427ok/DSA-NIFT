@@ -79,11 +79,20 @@ class NotebookStructureTests(unittest.TestCase):
         self.assertNotIn("reset\", \"--hard", self.source)
 
     def test_main_loop_does_not_reraise(self):
-        loop = next(s for s in code_cells(self.nb) if "for config, seed in expected_runs():" in s
-                    and "statuses" in s)
-        tree = ast.parse(loop)
-        self.assertFalse([n for n in ast.walk(tree) if isinstance(n, ast.Raise)],
-                         "a failed run must not abort the remaining runs")
+        """A failed run must not abort the remaining runs.
+
+        Only the loop body is checked: guards before the loop (e.g. an invalid
+        RUN_ONLY filter) are allowed to raise.
+        """
+        cell = next(s for s in code_cells(self.nb) if "statuses = []" in s)
+        loop = next(n for n in ast.walk(ast.parse(cell))
+                    if isinstance(n, ast.For)
+                    and any(isinstance(c, ast.Try) for c in ast.walk(n)))
+        self.assertFalse([n for n in ast.walk(loop) if isinstance(n, ast.Raise)])
+
+    def test_run_only_defaults_to_the_full_matrix(self):
+        cell = next(s for s in code_cells(self.nb) if "statuses = []" in s)
+        self.assertIn("RUN_ONLY = []", cell)
 
     def test_no_token_literal_in_notebook(self):
         self.assertIn("getpass.getpass", self.source)
