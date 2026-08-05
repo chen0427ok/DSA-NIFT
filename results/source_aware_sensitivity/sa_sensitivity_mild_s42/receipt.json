@@ -1,0 +1,64 @@
+{
+  "run_name": "sa_sensitivity_mild_s42",
+  "config": "mild",
+  "seed": 42,
+  "weights": {
+    "sentence": 0.5,
+    "text": 0.75,
+    "reflection": 1.0,
+    "edu2021": 1.0
+  },
+  "metrics": {
+    "V_MAE": 0.4697320158102766,
+    "V_PCC": 0.8223364314041395,
+    "A_MAE": 0.8240584980237154,
+    "A_PCC": 0.6165447636744259
+  },
+  "test_submission": {
+    "rows": 1100,
+    "sha256": "e00f3ab8737f7d28801ba59b4fce7f56ff7bf378b14ee4bf1136767b6880b2f0"
+  },
+  "train_command": [
+    "/usr/bin/python3",
+    "train_v2.py",
+    "--model",
+    "hfl/chinese-macbert-base",
+    "--lex_mode",
+    "l1_intensity",
+    "--source_aware",
+    "--source_weights",
+    "sentence=1:0.5,text=1:0.75,reflection=1:1,edu2021=1:1",
+    "--run_name",
+    "sa_sensitivity_mild_s42",
+    "--seed",
+    "42",
+    "--epochs",
+    "4",
+    "--batch_size",
+    "32",
+    "--lr",
+    "2e-05",
+    "--max_len",
+    "256"
+  ],
+  "repo_commit": "54d3eef7b64fac63efec0a9e0b9bf2cb5582648b",
+  "model": "hfl/chinese-macbert-base",
+  "completed_at": "2026-08-05T10:01:47Z",
+  "artifacts": [
+    {
+      "name": "dev_predictions.csv",
+      "bytes": 18795,
+      "sha256": "70d1f8ddb4163871632641a49d9abf585e03054258fd4e7cfd8b5ae8ce78834e"
+    },
+    {
+      "name": "test_submission.csv",
+      "bytes": 25153,
+      "sha256": "e00f3ab8737f7d28801ba59b4fce7f56ff7bf378b14ee4bf1136767b6880b2f0"
+    },
+    {
+      "name": "train.log",
+      "bytes": 3634,
+      "sha256": "17fc8489f459a74fbd7f1892d0e9ee0930dc9f233edbe0cb62af8ab741bd0fe9"
+    }
+  ]
+}
