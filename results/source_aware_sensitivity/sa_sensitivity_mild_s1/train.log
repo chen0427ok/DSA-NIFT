@@ -1,0 +1,60 @@
+
+===== train sa_sensitivity_mild_s1 =====
+$ /usr/bin/python3 train_v2.py --model hfl/chinese-macbert-base --lex_mode l1_intensity --source_aware --source_weights sentence=1:0.5,text=1:0.75,reflection=1:1,edu2021=1:1 --run_name sa_sensitivity_mild_s1 --seed 1 --epochs 4 --batch_size 32 --lr 2e-05 --max_len 256
+/usr/local/lib/python3.12/dist-packages/jieba/__init__.py:44: SyntaxWarning: invalid escape sequence '\.'
+  re_han_default = re.compile("([\u4E00-\u9FD5a-zA-Z0-9+#&\._%\-]+)", re.U)
+/usr/local/lib/python3.12/dist-packages/jieba/__init__.py:46: SyntaxWarning: invalid escape sequence '\s'
+  re_skip_default = re.compile("(\r\n|\s)", re.U)
+/usr/local/lib/python3.12/dist-packages/jieba/finalseg/__init__.py:78: SyntaxWarning: invalid escape sequence '\.'
+  re_skip = re.compile("([a-zA-Z0-9]+(?:\.\d+)?%?)")
+Building prefix dict from the default dictionary ...
+Dumping model to file cache /tmp/jieba.cache
+Loading model cost 0.651 seconds.
+Prefix dict has been built successfully.
+2026-08-05 14:40:28.133180: I tensorflow/core/platform/cpu_feature_guard.cc:210] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
+To enable the following instructions: AVX2 AVX512F FMA, in other operations, rebuild TensorFlow with the appropriate compiler flags.
+run=sa_sensitivity_mild_s1 | device=cuda | model=hfl/chinese-macbert-base | lex=l1_intensity | aw=1.0 pcc_w=0.0 | src_aware=True | rank_aug=None | pooling=mean
+train=9435 dev=253 val=200
+lexicon dim = 31
+source weights (V:A): {'sentence': (1.0, 0.5), 'text': (1.0, 0.75), 'reflection': (1.0, 1.0), 'edu2021': (1.0, 1.0), 'augment': (0.25, 0.0)}
+  ep1 step50/295 loss=0.0132
+  ep1 step100/295 loss=0.0109
+  ep1 step150/295 loss=0.0094
+  ep1 step200/295 loss=0.0086
+  ep1 step250/295 loss=0.0081
+[epoch 1] valence_MAE=0.5663 valence_PCC=0.7988 arousal_MAE=0.8542 arousal_PCC=0.5878  score=-0.0170
+  ep2 step50/295 loss=0.0044
+  ep2 step100/295 loss=0.0044
+  ep2 step150/295 loss=0.0044
+  ep2 step200/295 loss=0.0043
+  ep2 step250/295 loss=0.0043
+[epoch 2] valence_MAE=0.4879 valence_PCC=0.8065 arousal_MAE=0.8508 arousal_PCC=0.5927  score=0.0303
+  ep3 step50/295 loss=0.0032
+  ep3 step100/295 loss=0.0032
+  ep3 step150/295 loss=0.0032
+  ep3 step200/295 loss=0.0032
+  ep3 step250/295 loss=0.0032
+[epoch 3] valence_MAE=0.5161 valence_PCC=0.8023 arousal_MAE=0.8681 arousal_PCC=0.5890  score=0.0036
+  ep4 step50/295 loss=0.0027
+  ep4 step100/295 loss=0.0027
+  ep4 step150/295 loss=0.0027
+  ep4 step200/295 loss=0.0027
+  ep4 step250/295 loss=0.0026
+[epoch 4] valence_MAE=0.5035 valence_PCC=0.8047 arousal_MAE=0.8651 arousal_PCC=0.5897  score=0.0129
+best dev score = 0.0303
+[best] valence_MAE=0.4879 valence_PCC=0.8065 arousal_MAE=0.8508 arousal_PCC=0.5927
+submission -> /content/DSA-NIFT/outputs/sa_sensitivity_mild_s1_submission.csv  (200 rows)
+
+===== test inference sa_sensitivity_mild_s1 =====
+$ /usr/bin/python3 predict.py --ckpt /content/DSA-NIFT/outputs/sa_sensitivity_mild_s1_best.pt --input data/DSANIDF_TestSet.csv --run_name sa_sensitivity_mild_s1 --split test --model hfl/chinese-macbert-base --lex_mode l1_intensity --out_dir /content/sa_test_out/sa_sensitivity_mild_s1 --batch_size 32 --max_len 256
+Building prefix dict from the default dictionary ...
+Loading model from cache /tmp/jieba.cache
+Loading model cost 0.800 seconds.
+Prefix dict has been built successfully.
+2026-08-05 15:09:47.553674: I tensorflow/core/platform/cpu_feature_guard.cc:210] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
+To enable the following instructions: AVX2 AVX512F FMA, in other operations, rebuild TensorFlow with the appropriate compiler flags.
+input: data/DSANIDF_TestSet.csv  (1100 rows)
+loaded: /content/DSA-NIFT/outputs/sa_sensitivity_mild_s1_best.pt  (lex_mode=l1_intensity, lex_dim=31, pooling=mean)
+preds      -> /content/sa_test_out/sa_sensitivity_mild_s1/preds/sa_sensitivity_mild_s1_test.csv
+submission -> /content/sa_test_out/sa_sensitivity_mild_s1/sa_sensitivity_mild_s1_test_submission.csv
+[dist] valence mean=5.552 std=1.344 | arousal mean=5.016 std=0.768
