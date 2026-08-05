@@ -68,23 +68,36 @@ MacBERT、L1++、batch size 32、4 epochs、learning rate 2e-5 與 max length 25
 比較 uniform、mild、current、reflection-swap 四組 arousal source weights；每組使用
 seeds 42、1、2。這是預先指定的 sensitivity check，不是事後挑選最佳權重的 search。
 
-每個完成的 run 都會連同 checkpoint、dev/validation predictions、log、command、metrics
-與 SHA-256 receipt 保存到 Google Drive。Colab 中斷後重跑訓練 cell，只有通過 receipt
-驗證的 run 才會跳過；少任何一組時，彙整 cell 會以
-`incomplete 12-run matrix` 停止。12 組完整後會自動產生 mean±sample-SD、相對 uniform
-的 paired-seed differences、LaTeX 表格與 manifest，最後下載
-`source_aware_sensitivity_results.zip`。請將該 ZIP 完整帶回做論文分析；因含 12 個
-checkpoint，檔案可能很大，瀏覽器下載失敗時可直接從 notebook 顯示的 Drive 路徑取得。
+**repo 本身就是儲存層，不使用 Google Drive。** 每個 run 依序完成訓練、對
+`data/DSANIDF_TestSet.csv` 執行 `predict.py`、驗證 submission（1,100 rows、
+`ID,Valence,Arousal`、ID 順序、1–9 範圍），然後把四個小檔寫進
+`results/source_aware_sensitivity/<run_name>/`（`receipt.json`、
+`dev_predictions.csv`、`test_submission.csv`、`train.log`，每個 run 約 90 KB），
+**立刻 commit 並 non-force push 到 `origin/main`**。因此 Colab 斷線最多只損失一個
+run，續跑狀態存在 GitHub：重跑 cell 5 時，repo 裡已有完整結果的 run 會自動跳過。
 
-每個 run 完成後，notebook 也會以相同 checkpoint 對
-`data/DSANIDF_TestSet.csv` 執行 `predict.py`，將完整預測與官方格式 submission 納入
-Drive receipt。12 組都通過 1,100 rows、`ID,Valence,Arousal`、ID 順序及 1–9 範圍
-驗證後，可執行獨立的 publication cell：先檢查列出的 12 個來源與目標檔，把
-`PUSH_TO_MAIN = False` 改成 `True`，再重跑該 cell。它只會 stage
-`test_submissions/sa_sensitivity_*_test_submission.csv`，以單一 commit
-`加入 source-aware sensitivity test predictions` non-force push 到 `origin/main`。
-GitHub token 透過隱藏 prompt 與暫時 `GIT_ASKPASS` helper 使用，不寫入 remote URL、
-notebook、log 或 manifest；遠端分歧、同名異內容或 push race 會安全停止，不會 force-push。
+390 MB 的 checkpoint 只留在 Colab 本地碟，test 推論一做完就刪除，也絕不計算 SHA-256。
+`outputs/` 已在 `.gitignore`，checkpoint 結構上不可能被 commit。沒有 ZIP、沒有
+`files.download`——這三點正是 2026-08-04 版卡住的原因。
+
+任何一個 run 失敗都不會中斷其餘 run；迴圈結束會列出失敗清單與原因。彙整 cell 只讀
+repo 裡的 receipt，矩陣不完整時會列出缺哪幾個並拒絕寫出 summary 檔。
+
+GitHub push token 透過隱藏 prompt 與暫時 `GIT_ASKPASS` helper 使用，不寫入 remote URL、
+notebook 或 log。**cell 2 會先用 `git push --dry-run` 驗證推送權限才開始訓練**，避免跑完
+兩小時才發現推不上去。push 一律 `git push origin HEAD:main`，被拒時先 rebase 再重試一次，
+絕不 force-push。
+
+要把 `inverted`（完全反轉的 falsification control，1.00/0.75/0.50/0.25）加進矩陣，
+只需把 cell 3 的 `ENABLE_INVERTED` 改成 `True`，變成 5 configs × 3 seeds = 15 runs。
+
+Notebook 由 `notebooks/build_source_aware_sensitivity_notebook.py` 產生，契約由
+`tests/test_source_aware_sensitivity_notebook.py` 驗證：
+
+```bash
+python notebooks/build_source_aware_sensitivity_notebook.py
+python -m unittest tests.test_source_aware_sensitivity_notebook
+```
 
 本機收尾：
 ```bash
