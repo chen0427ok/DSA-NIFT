@@ -1,0 +1,54 @@
+
+===== train sa_sensitivity_reflection_swap_s42 =====
+$ /usr/bin/python3 train_v2.py --model hfl/chinese-macbert-base --lex_mode l1_intensity --source_aware --source_weights sentence=1:0.25,text=1:0.5,reflection=1:0.75,edu2021=1:1 --run_name sa_sensitivity_reflection_swap_s42 --seed 42 --epochs 4 --batch_size 32 --lr 2e-05 --max_len 256
+Building prefix dict from the default dictionary ...
+Loading model from cache /tmp/jieba.cache
+Loading model cost 0.804 seconds.
+Prefix dict has been built successfully.
+2026-08-05 17:10:21.131560: I tensorflow/core/platform/cpu_feature_guard.cc:210] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
+To enable the following instructions: AVX2 AVX512F FMA, in other operations, rebuild TensorFlow with the appropriate compiler flags.
+run=sa_sensitivity_reflection_swap_s42 | device=cuda | model=hfl/chinese-macbert-base | lex=l1_intensity | aw=1.0 pcc_w=0.0 | src_aware=True | rank_aug=None | pooling=mean
+train=9435 dev=253 val=200
+lexicon dim = 31
+source weights (V:A): {'sentence': (1.0, 0.25), 'text': (1.0, 0.5), 'reflection': (1.0, 0.75), 'edu2021': (1.0, 1.0), 'augment': (0.25, 0.0)}
+  ep1 step50/295 loss=0.0113
+  ep1 step100/295 loss=0.0089
+  ep1 step150/295 loss=0.0078
+  ep1 step200/295 loss=0.0072
+  ep1 step250/295 loss=0.0067
+[epoch 1] valence_MAE=0.5031 valence_PCC=0.8051 arousal_MAE=0.8454 arousal_PCC=0.6018  score=0.0292
+  ep2 step50/295 loss=0.0035
+  ep2 step100/295 loss=0.0035
+  ep2 step150/295 loss=0.0035
+  ep2 step200/295 loss=0.0035
+  ep2 step250/295 loss=0.0035
+[epoch 2] valence_MAE=0.4704 valence_PCC=0.8244 arousal_MAE=0.8236 arousal_PCC=0.6171  score=0.0737
+  ep3 step50/295 loss=0.0027
+  ep3 step100/295 loss=0.0027
+  ep3 step150/295 loss=0.0027
+  ep3 step200/295 loss=0.0027
+  ep3 step250/295 loss=0.0027
+[epoch 3] valence_MAE=0.4694 valence_PCC=0.8263 arousal_MAE=0.8369 arousal_PCC=0.6059  score=0.0629
+  ep4 step50/295 loss=0.0022
+  ep4 step100/295 loss=0.0022
+  ep4 step150/295 loss=0.0022
+  ep4 step200/295 loss=0.0022
+  ep4 step250/295 loss=0.0023
+[epoch 4] valence_MAE=0.4686 valence_PCC=0.8260 arousal_MAE=0.8419 arousal_PCC=0.6055  score=0.0604
+best dev score = 0.0737
+[best] valence_MAE=0.4704 valence_PCC=0.8244 arousal_MAE=0.8236 arousal_PCC=0.6171
+submission -> /content/DSA-NIFT/outputs/sa_sensitivity_reflection_swap_s42_submission.csv  (200 rows)
+
+===== test inference sa_sensitivity_reflection_swap_s42 =====
+$ /usr/bin/python3 predict.py --ckpt /content/DSA-NIFT/outputs/sa_sensitivity_reflection_swap_s42_best.pt --input data/DSANIDF_TestSet.csv --run_name sa_sensitivity_reflection_swap_s42 --split test --model hfl/chinese-macbert-base --lex_mode l1_intensity --out_dir /content/sa_test_out/sa_sensitivity_reflection_swap_s42 --batch_size 32 --max_len 256
+Building prefix dict from the default dictionary ...
+Loading model from cache /tmp/jieba.cache
+Loading model cost 1.505 seconds.
+Prefix dict has been built successfully.
+2026-08-05 17:39:42.739952: I tensorflow/core/platform/cpu_feature_guard.cc:210] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
+To enable the following instructions: AVX2 AVX512F FMA, in other operations, rebuild TensorFlow with the appropriate compiler flags.
+input: data/DSANIDF_TestSet.csv  (1100 rows)
+loaded: /content/DSA-NIFT/outputs/sa_sensitivity_reflection_swap_s42_best.pt  (lex_mode=l1_intensity, lex_dim=31, pooling=mean)
+preds      -> /content/sa_test_out/sa_sensitivity_reflection_swap_s42/preds/sa_sensitivity_reflection_swap_s42_test.csv
+submission -> /content/sa_test_out/sa_sensitivity_reflection_swap_s42/sa_sensitivity_reflection_swap_s42_test_submission.csv
+[dist] valence mean=5.729 std=1.341 | arousal mean=5.114 std=0.778
