@@ -50,6 +50,9 @@ def build_notebook():
         receipt 並跳過。每個 run 一跑完就 commit + push，所以結果不會因為 session
         掛掉而消失。
 
+        實測 T4 上每個 run 約 31 分鐘，12 個要 6 小時以上。要分段跑就設 cell 5 的
+        `RUN_ONLY`，例如 `["current"]` 只跑 current 的三個 seed。
+
         390 MB 的 checkpoint 只留在 Colab 本地碟，test 推論一做完就刪除；
         Drive 沒有掛載，也不會產生 ZIP 或瀏覽器下載。
         '''),
@@ -482,8 +485,25 @@ def build_notebook():
 
         cell("code", r'''
         # 5) 主迴圈：失敗不中斷，修好後重跑本 cell 即可續跑
+        #
+        # 實測每個 run 約 31 分鐘，跑滿 12 個要 6 小時以上，單一 Colab session 很可能撐不住。
+        # 想分段跑就填 RUN_ONLY，例如 ["current"] 只跑 current 的三個 seed；
+        # [] 代表整個矩陣。無論怎麼填，repo 裡已完成的 run 都會自動跳過。
+        RUN_ONLY = []
+        MINUTES_PER_RUN = 31  # 觀測值，只用來估時
+
+        selected = [(c, s) for c, s in expected_runs() if not RUN_ONLY or c in RUN_ONLY]
+        if not selected:
+            raise ValueError(f"RUN_ONLY={RUN_ONLY} 沒有對應任何 config；可選：{list(CONFIGS)}")
+        todo = [(c, s) for c, s in selected if already_done(c, s) is None]
+        print(f"選定 {len(selected)} runs：{len(selected) - len(todo)} 個已完成、{len(todo)} 個待跑")
+        print(f"預估 {len(todo) * MINUTES_PER_RUN} 分鐘"
+              f"（約 {len(todo) * MINUTES_PER_RUN / 60:.1f} 小時）")
+        for config, seed in todo:
+            print("  待跑:", run_name(config, seed))
+
         statuses = []
-        for config, seed in expected_runs():
+        for config, seed in selected:
             print(f"\n{'=' * 70}\n>>> {run_name(config, seed)}\n{'=' * 70}")
             try:
                 receipt = run_one(config, seed)
