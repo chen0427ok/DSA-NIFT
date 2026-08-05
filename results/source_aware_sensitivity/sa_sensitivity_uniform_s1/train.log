@@ -1,0 +1,54 @@
+
+===== train sa_sensitivity_uniform_s1 =====
+$ /usr/bin/python3 train_v2.py --model hfl/chinese-macbert-base --lex_mode l1_intensity --source_aware --source_weights sentence=1:1,text=1:1,reflection=1:1,edu2021=1:1 --run_name sa_sensitivity_uniform_s1 --seed 1 --epochs 4 --batch_size 32 --lr 2e-05 --max_len 256
+Building prefix dict from the default dictionary ...
+Loading model from cache /tmp/jieba.cache
+Loading model cost 0.977 seconds.
+Prefix dict has been built successfully.
+2026-08-05 08:28:41.924993: I tensorflow/core/platform/cpu_feature_guard.cc:210] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
+To enable the following instructions: AVX2 AVX512F FMA, in other operations, rebuild TensorFlow with the appropriate compiler flags.
+run=sa_sensitivity_uniform_s1 | device=cuda | model=hfl/chinese-macbert-base | lex=l1_intensity | aw=1.0 pcc_w=0.0 | src_aware=True | rank_aug=None | pooling=mean
+train=9435 dev=253 val=200
+lexicon dim = 31
+source weights (V:A): {'sentence': (1.0, 1.0), 'text': (1.0, 1.0), 'reflection': (1.0, 1.0), 'edu2021': (1.0, 1.0), 'augment': (0.25, 0.0)}
+  ep1 step50/295 loss=0.0147
+  ep1 step100/295 loss=0.0123
+  ep1 step150/295 loss=0.0107
+  ep1 step200/295 loss=0.0098
+  ep1 step250/295 loss=0.0092
+[epoch 1] valence_MAE=0.5575 valence_PCC=0.7993 arousal_MAE=0.8746 arousal_PCC=0.5881  score=-0.0224
+  ep2 step50/295 loss=0.0051
+  ep2 step100/295 loss=0.0051
+  ep2 step150/295 loss=0.0051
+  ep2 step200/295 loss=0.0051
+  ep2 step250/295 loss=0.0050
+[epoch 2] valence_MAE=0.4897 valence_PCC=0.8086 arousal_MAE=0.8543 arousal_PCC=0.5914  score=0.0280
+  ep3 step50/295 loss=0.0037
+  ep3 step100/295 loss=0.0038
+  ep3 step150/295 loss=0.0037
+  ep3 step200/295 loss=0.0037
+  ep3 step250/295 loss=0.0038
+[epoch 3] valence_MAE=0.5192 valence_PCC=0.8021 arousal_MAE=0.8725 arousal_PCC=0.5843  score=-0.0026
+  ep4 step50/295 loss=0.0031
+  ep4 step100/295 loss=0.0031
+  ep4 step150/295 loss=0.0031
+  ep4 step200/295 loss=0.0031
+  ep4 step250/295 loss=0.0030
+[epoch 4] valence_MAE=0.5036 valence_PCC=0.8067 arousal_MAE=0.8697 arousal_PCC=0.5861  score=0.0097
+best dev score = 0.0280
+[best] valence_MAE=0.4897 valence_PCC=0.8086 arousal_MAE=0.8543 arousal_PCC=0.5914
+submission -> /content/DSA-NIFT/outputs/sa_sensitivity_uniform_s1_submission.csv  (200 rows)
+
+===== test inference sa_sensitivity_uniform_s1 =====
+$ /usr/bin/python3 predict.py --ckpt /content/DSA-NIFT/outputs/sa_sensitivity_uniform_s1_best.pt --input data/DSANIDF_TestSet.csv --run_name sa_sensitivity_uniform_s1 --split test --model hfl/chinese-macbert-base --lex_mode l1_intensity --out_dir /content/sa_test_out/sa_sensitivity_uniform_s1 --batch_size 32 --max_len 256
+Building prefix dict from the default dictionary ...
+Loading model from cache /tmp/jieba.cache
+Loading model cost 0.799 seconds.
+Prefix dict has been built successfully.
+2026-08-05 08:59:08.887109: I tensorflow/core/platform/cpu_feature_guard.cc:210] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
+To enable the following instructions: AVX2 AVX512F FMA, in other operations, rebuild TensorFlow with the appropriate compiler flags.
+input: data/DSANIDF_TestSet.csv  (1100 rows)
+loaded: /content/DSA-NIFT/outputs/sa_sensitivity_uniform_s1_best.pt  (lex_mode=l1_intensity, lex_dim=31, pooling=mean)
+preds      -> /content/sa_test_out/sa_sensitivity_uniform_s1/preds/sa_sensitivity_uniform_s1_test.csv
+submission -> /content/sa_test_out/sa_sensitivity_uniform_s1/sa_sensitivity_uniform_s1_test_submission.csv
+[dist] valence mean=5.534 std=1.357 | arousal mean=4.986 std=0.750
