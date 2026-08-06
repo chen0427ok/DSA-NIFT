@@ -40,6 +40,16 @@ worsening A-MAE to 1.100, and E19 is submitted because it gives the lowest
 validation A-MAE (0.870) together with high A-PCC (0.452). These values explain
 the historical selection decision rather than establish final-test efficacy.
 
+The E4--E18--E19 comparison will distinguish lexicon expansion from source
+weighting. E18's 31-dimensional L1++ features alone underperform E4's 10 features
+on all four validation metrics, so the paper will not claim that 31 dimensions
+are independently superior. Holding the 31-dimensional representation fixed,
+E19 source weighting improves arousal MAE from 0.909 to 0.870 and arousal PCC
+from 0.408 to 0.452. The paper will therefore state that E19 was selected for its
+validation arousal balance, not because lexicon expansion alone was beneficial.
+Per the author's decision, this revision will not add a new limitation about the
+unrun 10-dimensional plus source-aware factorial cell.
+
 The Abstract will transition from the formal E19 score to the official-
 validation PCC--MAE trade-off and then to controlled augmentation evidence. The
 third contribution will focus on validation metric trade-offs and dimension-
