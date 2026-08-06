@@ -32,16 +32,27 @@ claim while preserving:
 
 ## Replacement Narrative
 
-The Abstract will transition from the formal E19 score directly to controlled
-augmentation evidence. The third contribution will focus on dimension-dependent
-uncertainty supported by the 2.31-times wider arousal bootstrap interval on the
-medical proxy and by the source-weight sensitivity analysis, rather than by
-cross-split rank correlation.
+Official public validation becomes the primary development narrative. The
+validation-only main table will explain three decisions without making target-
+test transfer claims: E4 gives the strongest balanced lexicon result, raw
+synthetic supervision reaches the highest validation A-PCC (0.461) while
+worsening A-MAE to 1.100, and E19 is submitted because it gives the lowest
+validation A-MAE (0.870) together with high A-PCC (0.452). These values explain
+the historical selection decision rather than establish final-test efficacy.
+
+The Abstract will transition from the formal E19 score to the official-
+validation PCC--MAE trade-off and then to controlled augmentation evidence. The
+third contribution will focus on validation metric trade-offs and dimension-
+dependent uncertainty supported by the 2.31-times wider arousal bootstrap
+interval on the medical proxy and by the source-weight sensitivity analysis,
+rather than by cross-split rank correlation.
 
 Related Work will state only that the project studies finite-sample selection
-uncertainty without claiming negatively associated orderings. The Conclusion
-will summarize the supported uncertainty evidence: arousal is more sample-
-sensitive on the proxy, and auxiliary supervision yields a PCC--MAE trade-off.
+uncertainty and metric trade-offs without claiming negatively associated
+orderings. The Conclusion will summarize the supported evidence: official
+validation exposes competing PCC/MAE preferences, arousal is more sample-
+sensitive on the proxy, and the matched auxiliary-supervision runs yield a
+PCC--MAE trade-off.
 
 ## Preserved Official-Test Evidence
 
@@ -62,4 +73,3 @@ After editing:
    overfull boxes;
 5. the Abstract, Introduction, Results, and Conclusion contain no claim whose
    only evidence was the removed family table.
-
