@@ -41,9 +41,10 @@ A secondary input enters feature fusion from the lexicon branch:
 
 `CVAW/CVAP + surface and migration cues → 31-d L1++ features → feature fusion`.
 
-The L1++ box includes the secondary label `10 VA statistics + 21 surface/domain
-cues`, making clear that L1++ is a handcrafted feature vector rather than a
-lexicon embedding.
+The L1++ box contains only the primary label `31-d L1++ feature vector` because
+Table 2 documents the feature composition. Other secondary labels are removed
+or shortened so that all remaining text stays legible after scaling to the
+paper's full text width.
 
 #### Training-only supervision
 
@@ -54,6 +55,9 @@ The training-only path shows the complete weighted-loss relationship:
 - `Valence/arousal predictions → weighted Smooth L1 loss`;
 - `Arousal source weights → weighted Smooth L1 loss`.
 
+These three inputs enter the loss at visibly different vertical positions, so
+their arrowheads and paths do not overlap.
+
 The source identity affects only the training loss and must not connect to the
 inference representation. The formal lane must not contain pseudo-labeling,
 synthetic examples, or graph-guided generation.
@@ -61,25 +65,20 @@ synthetic examples, or graph-guided generation.
 ### Diagnostic alternatives
 
 The lower lane occupies approximately 30–35% of the frame and uses pale fills
-and dashed connectors. It contains three parallel alternatives rather than one
-sequential pipeline:
+and dashed connectors. It presents two diagnostic data sources that converge
+on synthetic supervision:
 
-1. `Multi-teacher pseudo-labeling`: two MacBERT teachers plus one RoBERTa
-   teacher produce filtered labels.
+1. `Multi-teacher pseudo-labeling` feeds `Synthetic supervision`.
 2. `Graph-guided generation`: CVAW/CVAP plus FastText feed a kNN graph, seed
-   selection, and LLM-generated reflections.
-3. `Synthetic supervision alternatives`: direct labels, teacher labels, and
-   pairwise constraints.
+   selection, and LLM-generated reflections, which also feed `Synthetic
+   supervision`.
 
-Graph-generated text connects by a dashed arrow to the synthetic-supervision
-alternatives. Multi-teacher predictions connect by a dashed arrow specifically
-to teacher labels. These relationships must not imply that pseudo-labeling,
-graph generation, and pairwise constraints form one sequential method.
+Both branches connect independently to `Synthetic supervision`; they must not
+appear to feed one another.
 
-Official public-validation texts appear as an external reference box labeled
-`style / length only` and `unlabeled; optional reference only`. A dashed arrow
-connects this box only to LLM generation; it must not resemble an ordinary
-training-data input.
+Official public-validation texts appear as a compact external reference box. A
+dashed arrow labeled `style/length only` connects this box only to graph-guided
+generation; it must not resemble an ordinary training-data input.
 
 The lane title explicitly says `Diagnostic alternatives — not used in formal
 submission`.
@@ -87,21 +86,23 @@ submission`.
 ## Visual Language
 
 - White background and restrained academic-journal styling.
-- Deep blue and solid connectors for formal inference.
-- Violet and solid connectors for formal training-only supervision, lexicon
-  features, and source-aware weighting.
-- Pale lavender and dashed connectors for diagnostic branches.
+- Deep blue, slightly heavier strokes, and solid connectors for formal
+  inference. This is the strongest visual layer.
+- A lighter violet and thinner solid connectors for formal training-only
+  supervision, lexicon features, and source-aware weighting.
+- Pale lavender fills and dashed connectors for diagnostic branches. This is
+  the quietest visual layer.
 - Slate gray for secondary labels and explanatory text.
 - Encode lane semantics through text labels, color, and line style rather than
   color alone. Use the explicit headings `FORMAL E19 SUBMISSION` and
   `DIAGNOSTIC ALTERNATIVES — NOT USED IN FORMAL SUBMISSION`.
-- Use rounded rectangles with 6–8 pixel corner radii, 1–1.25 pixel strokes,
+- Use rounded rectangles with 4–6 pixel corner radii, 1–1.5 pixel strokes,
   consistent 8-pixel spacing units, and no shadow. Do not add decorative
   illustration that competes with the method flow.
-- Typography uses Inter with a clear hierarchy. After scaling to the paper's
-  full text width, lane titles should remain approximately 8.5–9 pt, main-node
-  text 7.5–8 pt, and secondary labels and legend text 6.5–7 pt. No text may
-  fall below approximately 6.5 pt in the final paper.
+- Typography uses Inter with a clear hierarchy. Lane titles are smaller but
+  heavier than before, while main-node labels are enlarged by removing
+  nonessential secondary copy. No retained text may become marginal at the
+  paper's full text width.
 - Use a three-chip legend in the upper-right corner: solid deep blue for formal
   inference, solid violet for formal training-only supervision, and dashed pale
   lavender for diagnostics. Omit a separate legend box.
@@ -111,13 +112,11 @@ submission`.
 Replace the inline `\fbox` construction with a full-width vector include while
 preserving `\label{fig:pipeline}`. Use this caption:
 
-> System overview. The upper lane shows the formal E19 system: MacBERT
+> System overview. The upper lane shows the formal E19 system, where MacBERT
 > representations are fused with 31-dimensional L1++ features, while source
 > identity affects only the arousal-weighted training loss. The lower lane shows
-> diagnostic alternatives that were not used in the formal submission,
-> including pseudo-labeling and graph-guided synthetic supervision.
-> Public-validation texts are unlabeled and used only as optional style and
-> length references.
+> diagnostic alternatives not used in the formal submission; public-validation
+> texts are unlabeled and used only as optional style/length references.
 
 ## Deliverables
 
@@ -133,10 +132,10 @@ preserving `\label{fig:pipeline}`. Use this caption:
 - Inspect the completed Figma frame via screenshot at high resolution.
 - Confirm every formal and diagnostic connection against the Methodology text.
 - Confirm predictions, gold labels, and source weights all feed the weighted
-  Smooth L1 loss.
+  Smooth L1 loss through distinct, non-overlapping entry paths.
 - Confirm source identity has no connection to the inference representation.
-- Confirm the three diagnostic methods are parallel alternatives rather than a
-  false sequential pipeline.
+- Confirm multi-teacher pseudo-labeling and graph-guided generation independently
+  feed synthetic supervision through an explicit data flow.
 - Confirm public-validation texts connect only to LLM style/length reference.
 - Confirm the formal lane contains no pseudo-labeling or synthetic augmentation.
 - Export as vector artwork and compile the paper.

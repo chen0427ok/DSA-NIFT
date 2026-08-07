@@ -11,8 +11,8 @@
 ## Global Constraints
 
 - Target Figma file key: `aVCMGwhi58wg4BJ1ugQOvx`; page `0:1`.
-- Use Inter, white background, no shadow, 6–8 px radii, and 1–1.25 px strokes.
-- Formal inference is solid deep blue; formal training is solid violet; diagnostics are pale lavender with dashed connectors.
+- Use Inter, white background, no shadow, 4–6 px radii, and restrained strokes.
+- Formal inference is solid deep blue with the strongest stroke weight; formal training is lighter violet; diagnostics are pale lavender with dashed connectors.
 - The final figure must remain legible at full paper text width and in grayscale.
 - Formal E19 must contain no pseudo-labeling or synthetic augmentation.
 - Public-validation text is unlabeled and connects only as an optional style/length reference.
@@ -38,15 +38,15 @@ Create a white top-level frame, formal and diagnostic lane backgrounds, headings
 
 - [ ] **Step 3: Build the formal inference path**
 
-Create the six-node left-to-right inference path and the L1++ side input. Use solid deep-blue connectors for the main path and solid violet for the lexicon branch. Include `10 VA statistics + 21 surface/domain cues`.
+Create the six-node left-to-right inference path and the L1++ side input. Use solid deep-blue connectors for the main path and lighter violet for the lexicon branch. Keep only core labels and remove the L1++ composition subtitle documented in Table 2.
 
 - [ ] **Step 4: Build formal training-only supervision**
 
-Create source identity, arousal source weights, gold V/A labels, predictions, and weighted Smooth L1 loss. Connect all three required inputs to the loss with solid violet lines; do not connect source identity to inference features.
+Create source identity, arousal source weights, gold V/A labels, predictions, and weighted Smooth L1 loss. Connect all three required inputs to the loss at distinct vertical entry positions with light-violet lines; do not connect source identity to inference features.
 
 - [ ] **Step 5: Build parallel diagnostic alternatives**
 
-Create separate multi-teacher, graph-guided generation, and synthetic-supervision cards. Connect graph text to synthetic supervision and teacher predictions specifically to teacher labels with dashed connectors. Add the optional unlabeled public-validation reference only to LLM generation.
+Create multi-teacher, graph-guided generation, and synthetic-supervision cards. Connect the first two independently to synthetic supervision with dashed arrows. Add the optional unlabeled public-validation reference only to graph generation, with `style/length only` on the dashed connector.
 
 - [ ] **Step 6: Visually validate and refine**
 
@@ -96,12 +96,11 @@ Replace the existing `figure*` body with:
 \begin{figure*}[t]
 \centering
 \includegraphics[width=\textwidth]{figures/system_pipeline_figma.pdf}
-\caption{System overview. The upper lane shows the formal E19 system: MacBERT
+\caption{System overview. The upper lane shows the formal E19 system, where MacBERT
 representations are fused with 31-dimensional L1++ features, while source
 identity affects only the arousal-weighted training loss. The lower lane shows
-diagnostic alternatives that were not used in the formal submission, including
-pseudo-labeling and graph-guided synthetic supervision. Public-validation texts
-are unlabeled and used only as optional style and length references.}
+diagnostic alternatives not used in the formal submission; public-validation
+texts are unlabeled and used only as optional style/length references.}
 \label{fig:pipeline}
 \end{figure*}
 ```
