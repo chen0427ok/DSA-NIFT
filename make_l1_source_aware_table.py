@@ -19,9 +19,10 @@ L1 x source-aware 2x2，含從未跑成的 E22 = L1 10 維 + source-aware）。
     paper/tables/l1_source_aware_2x2.tex        dev proxy 2x2（mean ± sample SD）
     paper/tables/l1_source_aware_official.tex   官方分數表（--official 有填才產生）
 
-預設會同時把 dev 2x2 表**直接寫回** paper/main.tex 的
-`% BEGIN l1-source-aware-2x2` / `% END l1-source-aware-2x2` 之間
-（論文是單一 main.tex 上 Overleaf，不用 \input）。加 --no_inject 可停用。
+論文目前的做法是**只在既有表格加一列 E22**（Table 4 設定索引、Table 5 official
+validation），所以本檔預設只產生獨立的表格檔，並把「可直接貼進 Table 5 的那一列」
+印出來。若之後要在論文放完整 2x2 表，先在 main.tex 補上
+`% BEGIN l1-source-aware-2x2` / `% END l1-source-aware-2x2` 兩行標記，再加 --inject。
 """
 import argparse
 import csv
@@ -135,12 +136,28 @@ def inject(main_tex, table_body):
     start = text.find(BEGIN_MARK)
     end = text.find(END_MARK)
     if start < 0 or end < 0 or end < start:
-        raise SystemExit(f"{main_tex} 找不到 {BEGIN_MARK} / {END_MARK} 標記")
+        print(f"跳過注入：{main_tex} 沒有 {BEGIN_MARK} / {END_MARK} 標記")
+        return False
     head_end = text.index("\n", start) + 1
     updated = text[:head_end] + table_body.rstrip("\n") + "\n" + text[end:]
     with open(main_tex, "w", encoding="utf-8") as f:
         f.write(updated)
     return updated != text
+
+
+def paste_row(official_rows, condition="e22_l1_sa", seed="42", split="validation",
+              row_label="E22: 10-d lexicon + source-aware"):
+    """印出可直接取代論文 Table 5 裡 E22 那列 \\TODO 的一行 LaTeX。"""
+    for r in official_rows:
+        if (r.get("condition") == condition and str(r.get("seed")) == str(seed)
+                and r.get("split") == split and all(r.get(m) for m in METRICS)):
+            values = " & ".join(f"{float(r[m]):.3f}" for m in METRICS)
+            print(f"\n貼進 main.tex 的 tab:validation（取代 E22 那列）：")
+            print(f"{row_label} & {values} \\\\")
+            return True
+    print(f"\n{condition} seed {seed} 的 {split} 官方分數還沒填，"
+          f"論文 Table 5 的 E22 列先維持 \\TODO")
+    return False
 
 
 def main():
@@ -150,7 +167,8 @@ def main():
     ap.add_argument("--official", default=None, help="填好分數的 official_scores_to_fill.csv")
     ap.add_argument("--table_dir", default=TABLE_DIR)
     ap.add_argument("--main_tex", default=MAIN_TEX)
-    ap.add_argument("--no_inject", action="store_true", help="只寫 tables/，不改 main.tex")
+    ap.add_argument("--inject", action="store_true",
+                    help="把完整 2x2 表寫回 main.tex 的 BEGIN/END 標記之間（標記要先存在）")
     args = ap.parse_args()
 
     summary_rows = read_csv_rows(args.dev_summary)
@@ -165,11 +183,13 @@ def main():
     complete = sum(1 for r in summary_rows if r.get("status") == "complete")
     print(f"wrote {dev_path}  ({complete}/4 conditions filled, {n_seeds} seeds)")
 
-    if not args.no_inject:
+    if args.inject:
         changed = inject(args.main_tex, body)
         print(f"{'updated' if changed else 'unchanged'} {args.main_tex}")
 
-    official = official_table(read_csv_rows(args.official))
+    official_rows = read_csv_rows(args.official)
+    paste_row(official_rows)
+    official = official_table(official_rows)
     if official:
         official_path = os.path.join(args.table_dir, "l1_source_aware_official.tex")
         with open(official_path, "w", encoding="utf-8") as f:

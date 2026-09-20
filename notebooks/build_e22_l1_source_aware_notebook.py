@@ -585,8 +585,9 @@ def build_notebook():
             --official <解壓路徑>/official_scores_to_fill.csv   # 有官方分數才加
         ```
 
-        會覆寫 `paper/tables/l1_source_aware_2x2.tex`，
-        論文 `\\input` 該檔的段落（Section 5「Disentangling ...」）即可直接編譯。
+        會產生 `paper/tables/l1_source_aware_2x2.tex`（完整 2x2 表，論文目前沒放），
+        並印出可直接貼進 `paper/main.tex` 的 official validation 表（`tab:validation`）
+        E22 那列的 LaTeX，取代該列現在的 `\\TODO`。
         '''),
     ]
     return {
