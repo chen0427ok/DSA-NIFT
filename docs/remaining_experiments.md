@@ -158,6 +158,12 @@ done
 ## 🟠 P1 — 強烈建議。這是讓所有 ablation 站得住腳的唯一方法
 
 ### P1-1. **關鍵 ablation 每格跑 3–5 個 seed**（Colab A100）
+> **2026-09-20 更新：ROCLING-2026 審稿意見 1 點名要這張 2×2 的最後一格（E22）。**
+> 已備妥可直接跑的 notebook：`notebooks/Rocling2026_Colab_e22_l1_source_aware.ipynb`
+> （4 conditions × seeds 42/1/2，同協定 batch 32；每個 run 產生 validation/test
+> 官方格式 csv 並壓成內部檔名 `submission.csv` 的 zip；Drive receipt 可續跑）。
+> 結果回本機後用 `make_l1_source_aware_table.py` 直接把表寫回 `paper/main.tex`。
+
 **目前所有結論都是單 seed 單次跑出來的**——這是本專案方法論上最大的漏洞，
 而 test 結果已經證明這個漏洞是真的會咬人的。
 
